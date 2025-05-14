@@ -23,6 +23,7 @@ use rfd::FileDialog;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 mod discover;
+mod mount;
 
 fn main() {
     println!("Startup");
@@ -44,6 +45,7 @@ fn main() {
         selected_device: "".to_string(),
         wireless_enabled: None,
         dev_mode_enabled: None,
+        ddi_mounted: None,
         pairing_file: None,
         pairing_file_message: None,
         pairing_file_string: None,
@@ -243,6 +245,10 @@ fn main() {
                         }
                     }
                 }
+                IdeviceCommands::AutoMount(dev) => match mount::auto_mount(dev).await {
+                    Ok(_) => gui_sender.send(GuiCommands::MountRes(Ok(()))).unwrap(),
+                    Err(e) => gui_sender.send(GuiCommands::MountRes(Err(e))).unwrap(),
+                },
                 IdeviceCommands::LoadPairingFile(dev) => {
                     // Connect to usbmuxd
                     let mut uc = match UsbmuxdConnection::default().await {
@@ -457,6 +463,7 @@ enum GuiCommands {
     EnabledWireless,
     EnableWirelessFailure(IdeviceError),
     DevMode(Result<bool, IdeviceError>),
+    MountRes(Result<(), IdeviceError>),
     PairingFile(Result<PairingFile, IdeviceError>),
     Validated(Result<(), IdeviceError>),
     InstalledApps(Result<HashMap<String, String>, IdeviceError>),
@@ -467,6 +474,7 @@ enum IdeviceCommands {
     GetDevices,
     EnableWireless(UsbmuxdDevice),
     CheckDevMode(UsbmuxdDevice),
+    AutoMount(UsbmuxdDevice),
     LoadPairingFile(UsbmuxdDevice),
     GeneratePairingFile(UsbmuxdDevice),
     Validate((Option<IpAddr>, PairingFile)),
@@ -484,6 +492,7 @@ struct MyApp {
     // Device info
     wireless_enabled: Option<Result<(), IdeviceError>>,
     dev_mode_enabled: Option<Result<bool, IdeviceError>>,
+    ddi_mounted: Option<Result<(), IdeviceError>>,
 
     // Pairing info
     pairing_file: Option<PairingFile>,
@@ -539,6 +548,9 @@ impl eframe::App for MyApp {
                 GuiCommands::DevMode(res) => {
                     self.dev_mode_enabled = Some(res);
                 }
+                GuiCommands::MountRes(res) => {
+                    self.ddi_mounted = Some(res);
+                }
                 GuiCommands::PairingFile(pairing_file) => match pairing_file {
                     Ok(p) => {
                         self.pairing_file = Some(p.clone());
@@ -583,6 +595,7 @@ impl eframe::App for MyApp {
                     .enable_category("rustls::client::tls12".to_string(), false)
                     .enable_category("rustls::client::common".to_string(), false)
                     .enable_category("idevice_pair::discover".to_string(), false)
+                    .enable_category("reqwest::connect".to_string(), false)
                     .show(ui);
             });
         }
@@ -625,6 +638,10 @@ impl eframe::App for MyApp {
                                             self.dev_mode_enabled = None;
                                             self.idevice_sender
                                                 .send(IdeviceCommands::CheckDevMode(dev.clone()))
+                                                .unwrap();
+                                            self.ddi_mounted = None;
+                                            self.idevice_sender
+                                                .send(IdeviceCommands::AutoMount(dev.clone()))
                                                 .unwrap();
                                             self.pairing_file = None;
                                             self.pairing_file_message = None;
@@ -671,6 +688,17 @@ impl eframe::App for MyApp {
                             }
                             Some(Ok(false)) => {
                                 ui.label(RichText::new("Disabled!").color(Color32::RED))
+                            }
+                            Some(Err(e)) => ui
+                                .label(RichText::new(format!("Failed: {e:?}")).color(Color32::RED)),
+                            None => ui.label("Loading..."),
+                        };
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Developer Disk Image (iOS 17+):");
+                        match &self.ddi_mounted {
+                            Some(Ok(_)) => {
+                                ui.label(RichText::new("Mounted").color(Color32::GREEN))
                             }
                             Some(Err(e)) => ui
                                 .label(RichText::new(format!("Failed: {e:?}")).color(Color32::RED)),
