@@ -56,7 +56,10 @@ fn main() {
         idevice_sender,
     };
 
-    let options = eframe::NativeOptions::default();
+    let d = eframe::icon_data::from_png_bytes(include_bytes!("../icon.png"))
+        .expect("The icon data must be valid");
+    let mut options = eframe::NativeOptions::default();
+    options.viewport.icon = Some(std::sync::Arc::new(d));
 
     // rt must be kept in scope for channel lifetimes, so we define and then spawn.
     let rt = tokio::runtime::Builder::new_multi_thread()
