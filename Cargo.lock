@@ -1306,6 +1306,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "egui_logger"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5069ec8405bea359cffc6e105d52b14adb963f67fec612fbce69e12150d199e0"
+dependencies = [
+ "chrono",
+ "egui",
+ "log",
+ "regex",
+]
+
+[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2066,7 +2078,7 @@ version = "0.1.0"
 dependencies = [
  "eframe",
  "egui",
- "env_logger",
+ "egui_logger",
  "futures-util",
  "idevice",
  "log",

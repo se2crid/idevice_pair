@@ -1,7 +1,7 @@
 // Jackson Coxson
 
 use futures_util::{StreamExt, pin_mut};
-use log::{info, warn};
+use log::{debug, warn};
 use mdns::{Record, RecordKind};
 use std::{net::IpAddr, time::Duration};
 use tokio::sync::mpsc::UnboundedSender;
@@ -43,7 +43,7 @@ pub async fn start_discover(sender: UnboundedSender<IdeviceCommands>) {
                 }
             };
 
-            info!("Discovered {mac_addr} at {addr}");
+            debug!("Discovered {mac_addr} at {addr}");
             sender
                 .send(IdeviceCommands::DiscoveredDevice((
                     addr,

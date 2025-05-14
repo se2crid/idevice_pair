@@ -26,7 +26,7 @@ mod discover;
 
 fn main() {
     println!("Startup");
-    env_logger::init();
+    egui_logger::builder().init().unwrap();
     let (gui_sender, gui_recv) = unbounded_channel();
     let (idevice_sender, mut idevice_receiver) = unbounded_channel();
     idevice_sender.send(IdeviceCommands::GetDevices).unwrap();
@@ -56,6 +56,7 @@ fn main() {
         validation_ip_input: "".to_string(),
         gui_recv,
         idevice_sender: idevice_sender.clone(),
+        show_logs: false,
     };
 
     let d = eframe::icon_data::from_png_bytes(include_bytes!("../icon.png"))
@@ -503,6 +504,8 @@ struct MyApp {
     // Channel
     gui_recv: UnboundedReceiver<GuiCommands>,
     idevice_sender: UnboundedSender<IdeviceCommands>,
+
+    show_logs: bool,
 }
 
 impl eframe::App for MyApp {
@@ -563,9 +566,39 @@ impl eframe::App for MyApp {
                 }
             },
         }
+        if self.show_logs {
+            egui::Window::new("Log").show(ctx, |ui| {
+                egui_logger::logger_ui()
+                    .warn_color(Color32::BLACK) // the yellow is too bright in dark mode
+                    .log_levels([true, true, true, true, false])
+                    .enable_category("idevice".to_string(), true)
+                    // there should be a way to set default false...
+                    .enable_category("mdns::mdns".to_string(), false)
+                    .enable_category("eframe".to_string(), false)
+                    .enable_category("eframe::native::glow_integration".to_string(), false)
+                    .enable_category("egui_glow::shader_version".to_string(), false)
+                    .enable_category("egui_glow::vao".to_string(), false)
+                    .enable_category("egui_glow::painter".to_string(), false)
+                    .enable_category("rustls::client::hs".to_string(), false)
+                    .enable_category("rustls::client::tls12".to_string(), false)
+                    .enable_category("rustls::client::common".to_string(), false)
+                    .enable_category("idevice_pair::discover".to_string(), false)
+                    .show(ui);
+            });
+        }
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.heading("idevice pair");
+                ui.horizontal(|ui| {
+                    ui.heading("idevice pair");
+                    ui.separator();
+                    let p_background_color = match ctx.theme() {
+                        egui::Theme::Dark => Color32::BLACK,
+                        egui::Theme::Light => Color32::LIGHT_GRAY,
+                    };
+                    egui::frame::Frame::new().corner_radius(3).inner_margin(3).fill(p_background_color).show(ui, |ui| {
+                        ui.toggle_value(&mut self.show_logs, "logs");
+                    });
+                });
                 match &self.devices {
                     Some(devs) => {
                         if devs.is_empty() {

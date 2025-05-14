@@ -12,11 +12,11 @@ idevice = { version = "0.1.33", features = [
   "house_arrest",
 ] }
 egui = { version = "0.31" }
+egui_logger = { version = "0.7" }
 eframe = { version = "0.31" }
 rfd = { version = "0.15", features = ["gtk3"], default-features = false }
 tokio = { version = "1.45", features = ["full"] }
 plist = { version = "1.7" }
-env_logger = { version = "0.11" }
 log = { version = "0.4" }
 uuid = { version = "1.16", features = ["v4"] }
 mdns = { version = "3" }
