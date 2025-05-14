@@ -280,6 +280,10 @@ fn main() {
                             continue;
                         }
                     };
+                    let buid: String = buid
+                        .chars()
+                        .map(|x| if x == 'a' || x == '1' { 'b' } else { x })
+                        .collect();
 
                     let id = uuid::Uuid::new_v4().to_string().to_uppercase();
                     let pairing_file = match lc.pair(id, buid).await {
