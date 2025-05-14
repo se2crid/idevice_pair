@@ -1,0 +1,21 @@
+[package]
+name = "idevice_pair"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+idevice = { version = "0.1.33", features = [
+  "pair",
+  "usbmuxd",
+  "installation_proxy",
+  "afc",
+  "house_arrest",
+] }
+egui = { version = "0.31" }
+eframe = { version = "0.31" }
+rfd = { version = "0.15" }
+tokio = { version = "1.45", features = ["full"] }
+plist = { version = "1.7" }
+env_logger = { version = "0.11" }
+log = { version = "0.4" }
+uuid = { version = "1.16", features = ["v4"] }
