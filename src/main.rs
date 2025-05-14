@@ -22,6 +22,8 @@ use idevice::{
 use rfd::FileDialog;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
+mod discover;
+
 fn main() {
     println!("Startup");
     env_logger::init();
@@ -53,7 +55,7 @@ fn main() {
         validating: false,
         validation_ip_input: "".to_string(),
         gui_recv,
-        idevice_sender,
+        idevice_sender: idevice_sender.clone(),
     };
 
     let d = eframe::icon_data::from_png_bytes(include_bytes!("../icon.png"))
@@ -68,7 +70,12 @@ fn main() {
         .unwrap();
 
     rt.spawn(async move {
+        discover::start_discover(idevice_sender).await;
+    });
+
+    rt.spawn(async move {
         let gui_sender = gui_sender.clone();
+        let mut discovered_devices: HashMap<String, IpAddr> = HashMap::new(); // mac, IP
         'main: while let Some(command) = idevice_receiver.recv().await {
             match command {
                 IdeviceCommands::GetDevices => {
@@ -303,6 +310,21 @@ fn main() {
                         .unwrap();
                 }
                 IdeviceCommands::Validate((ip, pairing_file)) => {
+                    let ip: IpAddr = match ip {
+                        Some(i) => i,
+                        None => {
+                            if let Some(ip) = discovered_devices.get(&pairing_file.wifi_mac_address)
+                            {
+                                *ip
+                            } else {
+                                gui_sender
+                                    .send(GuiCommands::Validated(Err(IdeviceError::DeviceNotFound)))
+                                    .unwrap();
+                                continue;
+                            }
+                        }
+                    };
+
                     let stream =
                         match tokio::net::TcpStream::connect(SocketAddr::new(ip, 62078)).await {
                             Ok(s) => s,
@@ -416,12 +438,15 @@ fn main() {
                         }
                     }
                 }
+                IdeviceCommands::DiscoveredDevice((ip, mac)) => {
+                    discovered_devices.insert(mac, ip);
+                }
             };
         }
         eprintln!("Exited idevice loop!!");
     });
 
-    eframe::run_native("idevice Pair", options, Box::new(|_| Ok(Box::new(app)))).unwrap();
+    eframe::run_native("idevice pair", options, Box::new(|_| Ok(Box::new(app)))).unwrap();
 }
 
 enum GuiCommands {
@@ -443,9 +468,10 @@ enum IdeviceCommands {
     CheckDevMode(UsbmuxdDevice),
     LoadPairingFile(UsbmuxdDevice),
     GeneratePairingFile(UsbmuxdDevice),
-    Validate((IpAddr, PairingFile)),
+    Validate((Option<IpAddr>, PairingFile)),
     InstalledApps((UsbmuxdDevice, Vec<String>)),
     InstallPairingFile((UsbmuxdDevice, String, String, String, PairingFile)), // dev, name, b_id, install path, pf
+    DiscoveredDevice((IpAddr, String)),                                       // ip, mac
 }
 
 struct MyApp {
@@ -684,17 +710,21 @@ impl eframe::App for MyApp {
 
                                 ui.separator();
                                 ui.heading("Validation");
-                                ui.label("Verify that your pairing file works over LAN.");
-                                ui.add(egui::TextEdit::singleline(&mut self.validation_ip_input).hint_text("Enter your device's IP..."));
+                                ui.label("Verify that your pairing file works over LAN. Your device will be searched for over your network.");
+                                ui.add(egui::TextEdit::singleline(&mut self.validation_ip_input).hint_text("OR enter your device's IP..."));
                                 if ui.button("Validate").clicked() {
                                     self.validating = true;
                                     self.validate_res = None;
-                                    match IpAddr::from_str(self.validation_ip_input.as_str()) {
-                                        Ok(i) => {
-                                            self.idevice_sender.send(IdeviceCommands::Validate((i, self.pairing_file.clone().unwrap()))).unwrap()
-                                        },
-                                        Err(_) => self.validate_res = Some(Err("Invalid IP".to_string()))
-                                    };
+                                    if self.validation_ip_input.is_empty() {
+                                        self.idevice_sender.send(IdeviceCommands::Validate((None, self.pairing_file.clone().unwrap()))).unwrap()
+                                    } else {
+                                        match IpAddr::from_str(self.validation_ip_input.as_str()) {
+                                            Ok(i) => {
+                                                self.idevice_sender.send(IdeviceCommands::Validate((Some(i), self.pairing_file.clone().unwrap()))).unwrap()
+                                            },
+                                            Err(_) => self.validate_res = Some(Err("Invalid IP".to_string()))
+                                        };
+                                    }
                                 }
                                 if self.validating {
                                     match &self.validate_res {
