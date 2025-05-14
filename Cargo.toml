@@ -13,7 +13,7 @@ idevice = { version = "0.1.33", features = [
 ] }
 egui = { version = "0.31" }
 eframe = { version = "0.31" }
-rfd = { version = "0.15" }
+rfd = { version = "0.15", features = ["gtk3"], default-features = false }
 tokio = { version = "1.45", features = ["full"] }
 plist = { version = "1.7" }
 env_logger = { version = "0.11" }
