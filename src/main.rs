@@ -567,7 +567,7 @@ impl eframe::App for MyApp {
             },
         }
         if self.show_logs {
-            egui::Window::new("Log").show(ctx, |ui| {
+            egui::Window::new("logs").show(ctx, |ui| {
                 egui_logger::logger_ui()
                     .warn_color(Color32::BLACK) // the yellow is too bright in dark mode
                     .log_levels([true, true, true, true, false])
