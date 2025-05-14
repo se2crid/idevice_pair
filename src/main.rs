@@ -282,10 +282,9 @@ fn main() {
                     };
 
                     // Modify it slightly so iOS doesn't invalidate the one connected right now.
-                    let buid: String = buid
-                        .chars()
-                        .map(|x| if x == 'a' || x == '1' { 'b' } else { x })
-                        .collect();
+                    let mut buid: Vec<char> = buid.chars().collect();
+                    buid[0] = if buid[0] == 'F' { 'A' } else { 'F' };
+                    let buid: String = buid.into_iter().collect();
 
                     let id = uuid::Uuid::new_v4().to_string().to_uppercase();
                     let pairing_file = match lc.pair(id, buid).await {
