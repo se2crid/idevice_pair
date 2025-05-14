@@ -280,6 +280,8 @@ fn main() {
                             continue;
                         }
                     };
+
+                    // Modify it slightly so iOS doesn't invalidate the one connected right now.
                     let buid: String = buid
                         .chars()
                         .map(|x| if x == 'a' || x == '1' { 'b' } else { x })
