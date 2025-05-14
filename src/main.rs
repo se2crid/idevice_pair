@@ -718,7 +718,7 @@ impl eframe::App for MyApp {
                                             if let Some(v) = self.install_res.get(name) {
                                                 match v {
                                                     Some(Ok(_)) => ui.label(RichText::new("Success").color(Color32::GREEN)),
-                                                    Some(Err(e)) => ui.label(RichText::new(e.to_string()).color(Color32::GREEN)),
+                                                    Some(Err(e)) => ui.label(RichText::new(e.to_string()).color(Color32::RED)),
                                                     None => ui.label("Installing..."),
                                                 };
                                             }
