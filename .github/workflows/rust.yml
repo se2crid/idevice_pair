@@ -248,7 +248,6 @@ jobs:
           name: ${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg
           path: dist/${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg
 
-
   # 5) Build & Upload Windows .exe
   build-windows:
     name: Build & Upload Windows .exe
