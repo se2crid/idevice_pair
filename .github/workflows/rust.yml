@@ -227,7 +227,22 @@ jobs:
           rm -rf dmg-staging
           echo "$DMG" > dmg-path.txt
 
+      - name: Check Notarization Requirements
+        id: check-notarization
+        run: |
+          echo "Running on: ${{ github.ref }}"
+          echo "Event type: ${{ github.event_name }}"
+          echo "APPLE_ID secret: ${{ secrets.NOTARIZE_APPLE_ID != '' && 'present' || 'missing' }}"
+          echo "APP_SPECIFIC_PASS secret: ${{ secrets.NOTARIZE_APP_SPECIFIC_PASS != '' && 'present' || 'missing' }}"
+          echo "TEAM_ID secret: ${{ secrets.NOTARIZE_TEAM_ID != '' && 'present' || 'missing' }}"
+
       - name: Notarize & Staple DMG
+        if: |
+          github.event_name == 'push' && 
+          github.ref == 'refs/heads/master' &&
+          secrets.NOTARIZE_APPLE_ID != '' &&
+          secrets.NOTARIZE_APP_SPECIFIC_PASS != '' &&
+          secrets.NOTARIZE_TEAM_ID != ''
         run: |
           DMG=$(cat dmg-path.txt)
           xcrun notarytool submit "$DMG" \
@@ -237,7 +252,7 @@ jobs:
             --wait --verbose
           xcrun stapler staple "$DMG"
 
-      - name: Upload Notarized DMG
+      - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg
