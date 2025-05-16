@@ -38,6 +38,7 @@ fn main() {
         "ALTPairingFile.mobiledevicepairing".to_string(),
     );
     supported_apps.insert("Feather".to_string(), "pairingFile.plist".to_string());
+    supported_apps.insert("StikDebug".to_string(), "pairingFile.plist".to_string());
 
     let app = MyApp {
         devices: None,
@@ -816,8 +817,6 @@ impl eframe::App for MyApp {
                                                 };
                                             }
                                         }
-                                        ui.separator();
-                                        ui.label("StikDebug currently does not support automatic installation");
                                     }
                                     Some(Err(e)) => {
                                         ui.label(RichText::new(format!("Failed getting installed apps: {:?}", e.to_string())).color(Color32::RED));
