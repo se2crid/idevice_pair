@@ -4,6 +4,7 @@
 
 name: Rust Cross-Platform Builds
 
+# Trigger configuration
 on:
   push:
     branches: ["master"]
@@ -15,20 +16,8 @@ on:
         description: 'Version to build'
         required: false
         default: '1.0.0'
-      create_release:
-        description: 'Create GitHub Release'
-        type: boolean
-        required: true
-        default: false
-      release_type:
-        description: 'Release Type'
-        type: choice
-        required: true
-        default: 'nightly'
-        options:
-          - 'nightly'
-          - 'release'
 
+# Global environment variables
 env:
   BINARY_NAME: idevice_pair
   APP_NAME: iDevicePair
@@ -37,7 +26,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # 1) Build AppImage for Linux
+  # Linux builds
   build-appimage:
     name: Build & Upload AppImage (Linux ${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
@@ -56,26 +45,15 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Cache Cargo registry & build artifacts
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/index
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-${{ matrix.target }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-
-            ${{ runner.os }}-cargo-
-
-      - name: Set up Rust
+      # Build setup
+      - name: Setup Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           components: rustfmt, clippy
           target: ${{ matrix.target }}
 
-      - name: Install build dependencies
+      - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -87,9 +65,9 @@ jobs:
             appstream \
             usbmuxd
 
-      - name: Build native binary
-        run: |
-          cargo build --release --bin ${{ env.BINARY_NAME }} --target ${{ matrix.target }}
+      # Build and package
+      - name: Build binary
+        run: cargo build --release --bin ${{ env.BINARY_NAME }} --target ${{ matrix.target }}
 
       - name: Download appimagetool
         run: |
@@ -128,7 +106,7 @@ jobs:
           name: ${{ env.APP_NAME }}-${{ env.VERSION }}-linux-${{ matrix.arch }}.AppImage
           path: ${{ env.APP_NAME }}-${{ env.VERSION }}-linux-${{ matrix.arch }}.AppImage
 
-  # 2) Build macOS slices
+  # macOS builds
   macos-universal:
     name: Build macOS slices
     runs-on: macos-latest
@@ -170,70 +148,32 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Validate Signing Secrets
-        id: check_secrets
-        run: |
-          # Check if this is a PR
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo "IS_PR=true" >> $GITHUB_ENV
-          fi
-          
-          # Check all required secrets
-          if [ -n "${{ secrets.DEV_ID_P12_BASE64 }}" ] && \
-             [ -n "${{ secrets.DEV_ID_P12_PASSWORD }}" ] && \
-             [ -n "${{ secrets.DEV_IDENTITY_NAME }}" ] && \
-             [ -n "${{ secrets.NOTARIZE_APPLE_ID }}" ] && \
-             [ -n "${{ secrets.NOTARIZE_APP_SPECIFIC_PASS }}" ] && \
-             [ -n "${{ secrets.NOTARIZE_TEAM_ID }}" ]; then
-            echo "ALL_SECRETS_AVAILABLE=true" >> $GITHUB_ENV
-          fi
-
-      - name: Import Developer ID Certificate
-        if: env.ALL_SECRETS_AVAILABLE == 'true' && env.IS_PR != 'true'
-        uses: apple-actions/import-codesign-certs@v5
-        with:
-          p12-file-base64: ${{ secrets.DEV_ID_P12_BASE64 }}
-          p12-password: ${{ secrets.DEV_ID_P12_PASSWORD }}
-
       - name: Download x86_64 slice
         uses: actions/download-artifact@v4
         with:
           name: slice-x86_64
-          path: slices/x86_64
+          path: slice-x86_64
 
       - name: Download arm64 slice
         uses: actions/download-artifact@v4
         with:
           name: slice-arm64
-          path: slices/arm64
+          path: slice-arm64
 
-      - name: Prepare slices
-        run: |
-          # Debug: List downloaded artifacts
-          echo "Contents of slices directory:"
-          ls -R slices/
-          
-          # Ensure executables are marked as such
-          chmod +x slices/x86_64/${{ env.BINARY_NAME }}
-          chmod +x slices/arm64/${{ env.BINARY_NAME }}
-          
-          # Debug: Verify file permissions
-          ls -l slices/x86_64/${{ env.BINARY_NAME }}
-          ls -l slices/arm64/${{ env.BINARY_NAME }}
-          
+      - name: Import Developer ID Certificate
+        uses: apple-actions/import-codesign-certs@v5
+        with:
+          p12-file-base64: ${{ secrets.DEV_ID_P12_BASE64 }}
+          p12-password:    ${{ secrets.DEV_ID_P12_PASSWORD }}
+
       - name: Build & Assemble Universal .app
         run: |
           APP="${{ env.APP_NAME }}.app"
           mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
-          # Debug: Verify paths before lipo
-          echo "Verifying slice paths:"
-          test -f "slices/x86_64/${{ env.BINARY_NAME }}" && echo "x86_64 slice exists" || echo "x86_64 slice missing"
-          test -f "slices/arm64/${{ env.BINARY_NAME }}" && echo "arm64 slice exists" || echo "arm64 slice missing"
-
-          # 1) Merge slices with absolute paths
-          lipo "$(pwd)/slices/x86_64/${{ env.BINARY_NAME }}" \
-               "$(pwd)/slices/arm64/${{ env.BINARY_NAME }}" \
+          # 1) Merge slices
+          lipo slice-x86_64/${{ env.BINARY_NAME }} \
+               slice-arm64/${{ env.BINARY_NAME }} \
             -create -output "$APP/Contents/MacOS/${{ env.APP_NAME }}"
 
           # 2) Write Info.plist
@@ -261,7 +201,6 @@ jobs:
           xattr -rc "$APP"
 
       - name: Code-sign with Hardened Runtime & Timestamp
-        if: env.ALL_SECRETS_AVAILABLE == 'true' && env.IS_PR != 'true'
         run: |
           APP="${{ env.APP_NAME }}.app"
           codesign --force --deep --options runtime --timestamp \
@@ -289,7 +228,6 @@ jobs:
           echo "$DMG" > dmg-path.txt
 
       - name: Notarize & Staple DMG
-        if: env.ALL_SECRETS_AVAILABLE == 'true' && env.IS_PR != 'true'
         run: |
           DMG=$(cat dmg-path.txt)
           xcrun notarytool submit "$DMG" \
@@ -299,30 +237,19 @@ jobs:
             --wait --verbose
           xcrun stapler staple "$DMG"
 
-      - name: Upload DMG
+      - name: Upload Notarized DMG
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg
           path: dist/${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg
 
 
-  # 5) Build & Upload Windows .exe
+  # Windows build
   build-windows:
-    name: Build & Upload Windows .exe
+    name: Build Windows x64
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v3
-      - name: Cache Cargo registry & build artifacts
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/index
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-x86_64-pc-windows-msvc
-          restore-keys: |
-            ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-
-            ${{ runner.os }}-cargo-
       - name: Set up Rust
         uses: actions-rs/toolchain@v1
         with:
@@ -341,48 +268,3 @@ jobs:
         with:
           name: ${{ env.APP_NAME }}-${{ env.VERSION }}-windows-x86_64.exe
           path: release/${{ env.APP_NAME }}-${{ env.VERSION }}-windows-x86_64.exe
-
-  # Release creation
-  create-release:
-    name: Create Release
-    needs: [build-appimage, macos-bundle, build-windows]
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true'
-
-    steps:
-      - name: Get current date
-        id: date
-        run: echo "DATE=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
-
-      - name: Set release info
-        id: release_info
-        run: |
-          if [[ "${{ github.event.inputs.release_type }}" == "release" ]]; then
-            echo "TAG=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-            echo "NAME=Release ${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-            echo "PRERELEASE=false" >> $GITHUB_OUTPUT
-          else
-            echo "TAG=nightly-${{ steps.date.outputs.DATE }}" >> $GITHUB_OUTPUT
-            echo "NAME=Nightly Build ${{ steps.date.outputs.DATE }}" >> $GITHUB_OUTPUT
-            echo "PRERELEASE=true" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ steps.release_info.outputs.TAG }}
-          name: ${{ steps.release_info.outputs.NAME }}
-          prerelease: ${{ steps.release_info.outputs.PRERELEASE }}
-          draft: false
-          generate_release_notes: true
-          files: |
-            artifacts/**/*.AppImage
-            artifacts/**/*.dmg
-            artifacts/**/*.exe
