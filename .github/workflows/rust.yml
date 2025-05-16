@@ -229,20 +229,23 @@ jobs:
 
       - name: Check Notarization Requirements
         id: check-notarization
+        env:
+          APPLE_ID: ${{ secrets.NOTARIZE_APPLE_ID }}
+          APP_PASS: ${{ secrets.NOTARIZE_APP_SPECIFIC_PASS }}
+          TEAM_ID: ${{ secrets.NOTARIZE_TEAM_ID }}
         run: |
           echo "Running on: ${{ github.ref }}"
           echo "Event type: ${{ github.event_name }}"
-          echo "APPLE_ID secret: ${{ secrets.NOTARIZE_APPLE_ID != '' && 'present' || 'missing' }}"
-          echo "APP_SPECIFIC_PASS secret: ${{ secrets.NOTARIZE_APP_SPECIFIC_PASS != '' && 'present' || 'missing' }}"
-          echo "TEAM_ID secret: ${{ secrets.NOTARIZE_TEAM_ID != '' && 'present' || 'missing' }}"
+          echo "APPLE_ID secret: ${APPLE_ID:+present}"
+          echo "APP_SPECIFIC_PASS secret: ${APP_PASS:+present}"
+          echo "TEAM_ID secret: ${TEAM_ID:+present}"
+          echo "can_notarize=$([ -n "$APPLE_ID" ] && [ -n "$APP_PASS" ] && [ -n "$TEAM_ID" ] && echo "true" || echo "false")" >> $GITHUB_OUTPUT
 
       - name: Notarize & Staple DMG
         if: |
           github.event_name == 'push' && 
           github.ref == 'refs/heads/master' &&
-          secrets.NOTARIZE_APPLE_ID != '' &&
-          secrets.NOTARIZE_APP_SPECIFIC_PASS != '' &&
-          secrets.NOTARIZE_TEAM_ID != ''
+          steps.check-notarization.outputs.can_notarize == 'true'
         run: |
           DMG=$(cat dmg-path.txt)
           xcrun notarytool submit "$DMG" \
