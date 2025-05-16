@@ -44,6 +44,7 @@ fn main() {
         devices: None,
         devices_placeholder: "Loading...".to_string(),
         selected_device: "".to_string(),
+        device_info: None,
         wireless_enabled: None,
         dev_mode_enabled: None,
         ddi_mounted: None,
@@ -110,15 +111,17 @@ fn main() {
                                         continue;
                                     }
                                 };
-                                let mut values = match lc.get_all_values().await {
+                                let values = match lc.get_all_values().await {
                                     Ok(v) => v,
                                     Err(e) => {
                                         error!("Failed to get lockdown values: {e:?}");
                                         continue;
                                     }
                                 };
-                                let device_name = match values.remove("DeviceName") {
-                                    Some(plist::Value::String(n)) => n,
+
+                                // Get device name for selection
+                                let device_name = match values.get("DeviceName") {
+                                    Some(plist::Value::String(n)) => n.clone(),
                                     _ => {
                                         continue;
                                     }
@@ -447,9 +450,45 @@ fn main() {
                             continue;
                         }
                     }
-                }
-                IdeviceCommands::DiscoveredDevice((ip, mac)) => {
+                }                IdeviceCommands::DiscoveredDevice((ip, mac)) => {
                     discovered_devices.insert(mac, ip);
+                },
+                IdeviceCommands::GetDeviceInfo(dev) => {
+                    let p = dev.to_provider(UsbmuxdAddr::default(), "idevice_pair");
+                    let mut lc = match LockdownClient::connect(&p).await {
+                        Ok(l) => l,
+                        Err(e) => {
+                            error!("Failed to connect to lockdown: {e:?}");
+                            continue;
+                        }
+                    };
+                    
+                    let values = match lc.get_all_values().await {
+                        Ok(v) => v,
+                        Err(e) => {
+                            error!("Failed to get lockdown values: {e:?}");
+                            continue;
+                        }
+                    };
+
+                    let mut device_info = Vec::with_capacity(5);
+
+                    // Fixed order of fields in reverse order
+                    let fields = [
+                        ("Device Name", "DeviceName"),
+                        ("Model", "ProductType"),
+                        ("iOS Version", "ProductVersion"),
+                        ("Build Number", "BuildVersion"), 
+                        ("UDID", "UniqueDeviceID"),
+                    ];
+
+                    for (display_name, key) in fields.iter() {
+                        if let Some(plist::Value::String(value)) = values.get(key) {
+                            device_info.push((display_name.to_string(), value.clone()));
+                        }
+                    }
+
+                    gui_sender.send(GuiCommands::DeviceInfo(device_info)).unwrap();
                 }
             };
         }
@@ -463,6 +502,7 @@ enum GuiCommands {
     NoUsbmuxd(IdeviceError),
     GetDevicesFailure(IdeviceError),
     Devices(HashMap<String, UsbmuxdDevice>),
+    DeviceInfo(Vec<(String, String)>),
     EnabledWireless,
     EnableWirelessFailure(IdeviceError),
     DevMode(Result<bool, IdeviceError>),
@@ -480,6 +520,7 @@ enum IdeviceCommands {
     AutoMount(UsbmuxdDevice),
     LoadPairingFile(UsbmuxdDevice),
     GeneratePairingFile(UsbmuxdDevice),
+    GetDeviceInfo(UsbmuxdDevice),
     Validate((Option<IpAddr>, PairingFile)),
     InstalledApps((UsbmuxdDevice, Vec<String>)),
     InstallPairingFile((UsbmuxdDevice, String, String, String, PairingFile)), // dev, name, b_id, install path, pf
@@ -491,6 +532,8 @@ struct MyApp {
     devices: Option<HashMap<String, UsbmuxdDevice>>,
     devices_placeholder: String,
     selected_device: String,
+      // Device details
+    device_info: Option<Vec<(String, String)>>,
 
     // Device info
     wireless_enabled: Option<Result<(), IdeviceError>>,
@@ -523,8 +566,7 @@ struct MyApp {
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Get updates from the idevice thread
-        match self.gui_recv.try_recv() {
-            Ok(msg) => match msg {
+        match self.gui_recv.try_recv() {            Ok(msg) => match msg {
                 GuiCommands::NoUsbmuxd(idevice_error) => {
                     let install_msg = if cfg!(windows) {
                         "Make sure you have iTunes installed from Apple's website, and that it's running."
@@ -539,6 +581,7 @@ impl eframe::App for MyApp {
                     );
                 }
                 GuiCommands::Devices(vec) => self.devices = Some(vec),
+                GuiCommands::DeviceInfo(info) => self.device_info = Some(info),
                 GuiCommands::GetDevicesFailure(idevice_error) => {
                     self.devices_placeholder = format!(
                         "Failed to get list of connected devices from usbmuxd! {idevice_error:?}"
@@ -620,55 +663,81 @@ impl eframe::App for MyApp {
                         if devs.is_empty() {
                             ui.label("No devices connected! Plug one in via USB.");
                         } else {
-                            ui.label("Choose a device");
-                            ComboBox::from_label("")
-                                .selected_text(&self.selected_device)
-                                .show_ui(ui, |ui| {
-                                    for (dev_name, dev) in devs {
-                                        if ui
-                                            .selectable_value(
-                                                &mut self.selected_device,
-                                                dev_name.clone(),
-                                                dev_name.clone(),
-                                            )
-                                            .clicked()
-                                        {
-                                            // reset values
-                                            self.wireless_enabled = None;
-                                            self.idevice_sender
-                                                .send(IdeviceCommands::EnableWireless(dev.clone()))
-                                                .unwrap();
-                                            self.dev_mode_enabled = None;
-                                            self.idevice_sender
-                                                .send(IdeviceCommands::CheckDevMode(dev.clone()))
-                                                .unwrap();
-                                            self.ddi_mounted = None;
-                                            self.idevice_sender
-                                                .send(IdeviceCommands::AutoMount(dev.clone()))
-                                                .unwrap();
-                                            self.pairing_file = None;
-                                            self.pairing_file_message = None;
-                                            self.pairing_file_string = None;
-                                            self.installed_apps = None;
-                                            self.idevice_sender.send(IdeviceCommands::InstalledApps((dev.clone(), self.supported_apps.keys().map(|x| x.to_owned()).collect()))).unwrap();
-                                            self.validating = false;
-                                            self.validate_res = None;
-                                        };
+                            ui.horizontal(|ui| {
+                                ui.vertical(|ui| {
+                                    ui.label("Choose a device");
+                                    ComboBox::from_label("")
+                                        .selected_text(&self.selected_device)
+                                        .show_ui(ui, |ui| {
+                                            for (dev_name, dev) in devs {
+                                                if ui
+                                                    .selectable_value(
+                                                        &mut self.selected_device,
+                                                        dev_name.clone(),
+                                                        dev_name.clone(),
+                                                    )
+                                                    .clicked()
+                                                {
+                                                    // Get device info immediately
+                                                    self.wireless_enabled = None;
+                                                    self.dev_mode_enabled = None;
+                                                    self.ddi_mounted = None;
+                                                    self.device_info = None;
+
+                                                    // Send all device info requests
+                                                    let dev_clone = dev.clone();
+                                                    self.idevice_sender
+                                                        .send(IdeviceCommands::EnableWireless(dev_clone.clone()))
+                                                        .unwrap();
+                                                    self.idevice_sender
+                                                        .send(IdeviceCommands::CheckDevMode(dev_clone.clone()))
+                                                        .unwrap();
+                                                    self.idevice_sender
+                                                        .send(IdeviceCommands::AutoMount(dev_clone.clone()))
+                                                        .unwrap();
+                                                    self.idevice_sender
+                                                        .send(IdeviceCommands::GetDeviceInfo(dev_clone))
+                                                        .unwrap();self.pairing_file = None;
+                                                    self.pairing_file_message = None;
+                                                    self.pairing_file_string = None;
+                                                    self.installed_apps = None;
+                                                    self.device_info = None;
+                                                    self.idevice_sender.send(IdeviceCommands::InstalledApps((dev.clone(), self.supported_apps.keys().map(|x| x.to_owned()).collect()))).unwrap();
+                                                    self.validating = false;
+                                                    self.validate_res = None;
+                                                };
+                                            }
+                                        });
+                                    if ui.button("Refresh...").clicked() {
+                                        self.idevice_sender
+                                            .send(IdeviceCommands::GetDevices)
+                                            .unwrap();
                                     }
                                 });
+                                
+                                ui.separator();
+
+                                // Show device info to the right if available
+                                if let Some(info) = &self.device_info {
+                                    ui.vertical(|ui| {
+                                        for (key, value) in info {
+                                            ui.horizontal(|ui| {
+                                                ui.label(format!("{}:", key));
+                                                ui.label(value);
+                                            });
+                                        }
+                                    });
+                                }
+                            });
                         }
                     }
                     None => {
                         ui.label(&self.devices_placeholder);
                     }
                 }
-                if ui.button("Refresh...").clicked() {
-                    self.idevice_sender
-                        .send(IdeviceCommands::GetDevices)
-                        .unwrap();
-                }
 
                 ui.separator();
+
                 if let Some(dev) = self
                     .devices
                     .as_ref()
