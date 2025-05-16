@@ -708,11 +708,6 @@ impl eframe::App for MyApp {
                                                 };
                                             }
                                         });
-                                    if ui.button("Refresh...").clicked() {
-                                        self.idevice_sender
-                                            .send(IdeviceCommands::GetDevices)
-                                            .unwrap();
-                                    }
                                 });
                                 
                                 ui.separator();
@@ -730,6 +725,12 @@ impl eframe::App for MyApp {
                                 }
                             });
                         }
+                        if ui.button("Refresh...").clicked() {
+                            self.idevice_sender
+                                .send(IdeviceCommands::GetDevices)
+                                .unwrap();
+                        }
+
                     }
                     None => {
                         ui.label(&self.devices_placeholder);
