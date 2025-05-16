@@ -304,13 +304,15 @@ fn main() {
                     let buid: String = buid.into_iter().collect();
 
                     let id = uuid::Uuid::new_v4().to_string().to_uppercase();
-                    let pairing_file = match lc.pair(id, buid).await {
+                    let mut pairing_file = match lc.pair(id, buid).await {
                         Ok(p) => p,
                         Err(e) => {
                             gui_sender.send(GuiCommands::PairingFile(Err(e))).unwrap();
                             continue;
                         }
                     };
+
+                    pairing_file.udid = Some(dev.udid.clone());
 
                     gui_sender
                         .send(GuiCommands::PairingFile(Ok(pairing_file)))
