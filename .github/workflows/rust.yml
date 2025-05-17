@@ -1,5 +1,10 @@
+# Workflow by se2cird <https://github.com/se2cird>, ask me if you have any questions
+
+# Workflow to build and upload AppImage for Linux, macOS Universal DMG, and Windows .exe
+
 name: Rust Cross-Platform Builds
 
+# Trigger configuration
 on:
   push:
     branches: ["master"]
@@ -12,6 +17,7 @@ on:
         required: false
         default: '1.0.0'
 
+# Global environment variables
 env:
   BINARY_NAME: idevice_pair
   APP_NAME: iDevicePair
@@ -20,9 +26,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # ────────────────────────────────────────────────────────────────────────────────
-  # Linux builds: AppImage
-  # ────────────────────────────────────────────────────────────────────────────────
+  # Linux builds
   build-appimage:
     name: Build & Upload AppImage (Linux ${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
@@ -32,64 +36,296 @@ jobs:
           - arch: x86_64
             runner: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+            toolfile: appimagetool-x86_64.AppImage
           - arch: aarch64
             runner: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
+            toolfile: appimagetool-aarch64.AppImage
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      - name: Setup Rust
+      # Build setup
+      - name: Setup Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           components: rustfmt, clippy
           target: ${{ matrix.target }}
 
-      - name: Install system deps
+      - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            libglib2.0-dev libatk1.0-dev libgtk-3-dev \
-            pkg-config libfuse2 appstream usbmuxd \
-            libimobiledevice6 libimobiledevice-utils \
-            libusbmuxd-tools curl
+            libglib2.0-dev \
+            libatk1.0-dev \
+            libgtk-3-dev \
+            pkg-config \
+            libfuse2 \
+            appstream \
+            usbmuxd \
+            libimobiledevice6 \
+            libimobiledevice-utils \
+            libusbmuxd-tools \
+            libplist3
 
-      - name: Install usbmuxd systemd units inline
-        run: |
-          # … (omitted for brevity; same as before) …
-
-      - name: Enable & start usbmuxd socket
-        run: |
-          sudo systemctl enable --now usbmuxd.socket
-          sudo ls -l /var/run/usbmuxd
-
+      # Build and package
       - name: Build binary
+        run: cargo build --release --bin ${{ env.BINARY_NAME }} --target ${{ matrix.target }}
+
+      - name: Download appimagetool
         run: |
-          cargo build --release --bin ${{ env.BINARY_NAME }} --target ${{ matrix.target }}
+          wget -c https://github.com/AppImage/AppImageKit/releases/download/continuous/${{ matrix.toolfile }} \
+            -O appimagetool.AppImage
+          chmod +x appimagetool.AppImage
 
       - name: Prepare AppDir
         run: |
-          # … (omitted for brevity; same as before) …
+          # Create directory structure
+          mkdir -p AppDir/{usr/{bin,lib,share},etc/{udev/rules.d,init.d}}
+          
+          # Copy binaries and libraries
+          cp target/${{ matrix.target }}/release/${{ env.BINARY_NAME }} AppDir/usr/bin/
+          cp $(which usbmuxd) AppDir/usr/bin/
+          cp $(which iproxy) AppDir/usr/bin/
+          
+          # Copy shared libraries
+          ldd AppDir/usr/bin/usbmuxd | grep "=> /" | awk '{print $3}' | xargs -I '{}' cp -v '{}' AppDir/usr/lib/ || true
+          
+          # Copy udev rules
+          sudo cp /lib/udev/rules.d/39-usbmuxd.rules AppDir/etc/udev/rules.d/
+          
+          # Create startup script
+          cat > AppDir/usr/bin/start-usbmuxd.sh <<'EOF'
+          #!/bin/bash
+          if ! pgrep usbmuxd >/dev/null; then
+            killall usbmuxd 2>/dev/null || true
+            sudo LD_LIBRARY_PATH="./usr/lib:$LD_LIBRARY_PATH" ./usr/bin/usbmuxd -f -v &
+            sleep 2
+          fi
+          EOF
+          chmod +x AppDir/usr/bin/start-usbmuxd.sh
+          
+          # Create AppRun with daemon startup
+          cat > AppDir/AppRun <<'EOF'
+          #!/bin/bash
+          HERE="$(dirname "$(readlink -f "${0}")")"
+          export PATH="${HERE}/usr/bin:${PATH}"
+          export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
+          
+          # Start usbmuxd if needed
+          "${HERE}/usr/bin/start-usbmuxd.sh"
+          
+          # Run main application
+          exec "${HERE}/usr/bin/${{ env.BINARY_NAME }}" "$@"
+          EOF
+          chmod +x AppDir/AppRun
+          
+          # Setup desktop entry and icon
+          ICON_NAME=${ICON_PNG##*/}; BASENAME=${ICON_NAME%.*}
+          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+          cp ${{ env.ICON_PNG }} AppDir/${BASENAME}.png
+          cp ${{ env.ICON_PNG }} AppDir/usr/share/icons/hicolor/256x256/apps/${BASENAME}.png
+          cat > AppDir/${{ env.BINARY_NAME }}.desktop <<EOF
+          [Desktop Entry]
+          Type=Application
+          Name=${{ env.APP_NAME }}
+          Exec=${{ env.BINARY_NAME }}
+          Icon=${BASENAME}
+          Categories=Utility;
+          Terminal=true
+          EOF
 
-      - name: Create AppRun + make executable
-        run: |
-          # … (omitted for brevity; same as before) …
+      # Continue with the rest of the workflow...
 
-      - name: Download AppImageTool
-        run: |
-          # Fetch the correct AppImageTool for this arch from AppImageKit “continuous” release
-          wget -qO appimagetool.AppImage \
-            https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-${{ matrix.arch }}.AppImage \
-            && chmod +x appimagetool.AppImage
       - name: Build AppImage
         run: |
-          FNAME="${{ env.APP_NAME }}-${{ env.VERSION }}-linux-${{ matrix.arch }}.AppImage"
-          ./appimagetool.AppImage AppDir "$FNAME"
+          FILENAME="${{ env.APP_NAME }}-${{ env.VERSION }}-linux-${{ matrix.arch }}.AppImage"
+          ./appimagetool.AppImage AppDir "$FILENAME"
 
       - name: Upload AppImage
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.APP_NAME }}-${{ env.VERSION }}-linux-${{ matrix.arch }}.AppImage
           path: ${{ env.APP_NAME }}-${{ env.VERSION }}-linux-${{ matrix.arch }}.AppImage
+
+  # macOS builds
+  macos-universal:
+    name: Build macOS slices
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            target: x86_64-apple-darwin
+          - arch: arm64
+            target: aarch64-apple-darwin
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Rust for ${{ matrix.arch }}
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          target: ${{ matrix.target }}
+
+      - name: Build ${{ matrix.arch }} slice
+        run: |
+          cargo build --release \
+            --bin ${{ env.BINARY_NAME }} \
+            --target ${{ matrix.target }}
+
+      - name: Upload slice ${{ matrix.arch }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: slice-${{ matrix.arch }}
+          path: target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}
+
+  macos-bundle:
+    name: Create, Sign, Notarize & Upload Universal DMG
+    needs: macos-universal
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Download x86_64 slice
+        uses: actions/download-artifact@v4
+        with:
+          name: slice-x86_64
+          path: slice-x86_64
+
+      - name: Download arm64 slice
+        uses: actions/download-artifact@v4
+        with:
+          name: slice-arm64
+          path: slice-arm64
+
+      - name: Import Developer ID Certificate
+        uses: apple-actions/import-codesign-certs@v5
+        with:
+          p12-file-base64: ${{ secrets.DEV_ID_P12_BASE64 }}
+          p12-password:    ${{ secrets.DEV_ID_P12_PASSWORD }}
+
+      - name: Build & Assemble Universal .app
+        run: |
+          APP="${{ env.APP_NAME }}.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+
+          # 1) Merge slices
+          lipo slice-x86_64/${{ env.BINARY_NAME }} \
+               slice-arm64/${{ env.BINARY_NAME }} \
+            -create -output "$APP/Contents/MacOS/${{ env.APP_NAME }}"
+
+          # 2) Write Info.plist
+          cat > "$APP/Contents/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+                   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>CFBundleName</key><string>${{ env.APP_NAME }}</string>
+            <key>CFBundleDisplayName</key><string>${{ env.APP_NAME }}</string>
+            <key>CFBundleIdentifier</key><string>com.github.se2cird2.${{ env.APP_NAME }}</string>
+            <key>CFBundleVersion</key><string>${{ env.VERSION }}</string>
+            <key>CFBundleShortVersionString</key><string>${{ env.VERSION }}</string>
+            <key>CFBundleExecutable</key><string>${{ env.APP_NAME }}</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>CFBundleIconFile</key><string>icon.icns</string>
+          </dict></plist>
+          EOF
+
+          # 3) Generate .icns from PNG
+          sips -s format icns "${{ env.ICON_PNG }}" \
+            --out "$APP/Contents/Resources/icon.icns"
+
+          # 4) Clean any stray xattrs
+          xattr -rc "$APP"
+
+      - name: Code-sign with Hardened Runtime & Timestamp
+        run: |
+          APP="${{ env.APP_NAME }}.app"
+          codesign --force --deep --options runtime --timestamp \
+            --sign "${{ secrets.DEV_IDENTITY_NAME }}" "$APP"
+
+      - name: Fix Permissions
+        run: |
+          APP="${{ env.APP_NAME }}.app"
+          find "$APP" -type d -exec chmod 755 {} +
+          find "$APP" -type f -exec chmod 644 {} +
+          chmod +x "$APP/Contents/MacOS/${{ env.APP_NAME }}"
+
+      - name: Create DMG
+        run: |
+          DMG="dist/${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg"
+          mkdir -p dist dmg-staging
+          cp -R "${{ env.APP_NAME }}.app" dmg-staging/
+          ln -s /Applications dmg-staging/Applications
+          hdiutil create \
+            -volname "${{ env.APP_NAME }}" \
+            -srcfolder dmg-staging \
+            -ov -format UDZO \
+            "$DMG"
+          rm -rf dmg-staging
+          echo "$DMG" > dmg-path.txt
+
+      - name: Check Notarization Requirements
+        id: check-notarization
+        env:
+          APPLE_ID: ${{ secrets.NOTARIZE_APPLE_ID }}
+          APP_PASS: ${{ secrets.NOTARIZE_APP_SPECIFIC_PASS }}
+          TEAM_ID: ${{ secrets.NOTARIZE_TEAM_ID }}
+        run: |
+          echo "Running on: ${{ github.ref }}"
+          echo "Event type: ${{ github.event_name }}"
+          echo "APPLE_ID secret: ${APPLE_ID:+present}"
+          echo "APP_SPECIFIC_PASS secret: ${APP_PASS:+present}"
+          echo "TEAM_ID secret: ${TEAM_ID:+present}"
+          echo "can_notarize=$([ -n "$APPLE_ID" ] && [ -n "$APP_PASS" ] && [ -n "$TEAM_ID" ] && echo "true" || echo "false")" >> $GITHUB_OUTPUT
+
+      - name: Notarize & Staple DMG
+        if: |
+          github.event_name == 'push' && 
+          github.ref == 'refs/heads/master' &&
+          steps.check-notarization.outputs.can_notarize == 'true'
+        run: |
+          DMG=$(cat dmg-path.txt)
+          xcrun notarytool submit "$DMG" \
+            --apple-id "${{ secrets.NOTARIZE_APPLE_ID }}" \
+            --password "${{ secrets.NOTARIZE_APP_SPECIFIC_PASS }}" \
+            --team-id "${{ secrets.NOTARIZE_TEAM_ID }}" \
+            --wait --verbose
+          xcrun stapler staple "$DMG"
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg
+          path: dist/${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg
+
+
+  # Windows build
+  build-windows:
+    name: Build Windows x64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+          target: x86_64-pc-windows-msvc
+      - name: Build and Rename Executable
+        shell: bash
+        run: |
+          cargo build --release --bin ${{ env.BINARY_NAME }} --target x86_64-pc-windows-msvc
+          mkdir -p release
+          cp target/x86_64-pc-windows-msvc/release/${{ env.BINARY_NAME }}.exe \
+             release/${{ env.APP_NAME }}-${{ env.VERSION }}-windows-x86_64.exe
+      - name: Upload Windows .exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-${{ env.VERSION }}-windows-x86_64.exe
+          path: release/${{ env.APP_NAME }}-${{ env.VERSION }}-windows-x86_64.exe
