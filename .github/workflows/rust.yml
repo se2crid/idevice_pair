@@ -160,47 +160,36 @@ jobs:
           name: slice-arm64
           path: slice-arm64
 
+      - name: Check Signing Requirements
+        id: check-signing
+        env:
+          P12_BASE64: ${{ secrets.DEV_ID_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.DEV_ID_P12_PASSWORD }}
+          DEV_ID: ${{ secrets.DEV_IDENTITY_NAME }}
+          APPLE_ID: ${{ secrets.NOTARIZE_APPLE_ID }}
+          APP_PASS: ${{ secrets.NOTARIZE_APP_SPECIFIC_PASS }}
+          TEAM_ID: ${{ secrets.NOTARIZE_TEAM_ID }}
+        run: |
+          echo "Running on: ${{ github.ref }}"
+          echo "Event type: ${{ github.event_name }}"
+          echo "P12 Certificate: ${P12_BASE64:+present}"
+          echo "P12 Password: ${P12_PASSWORD:+present}"
+          echo "Developer ID: ${DEV_ID:+present}"
+          echo "APPLE_ID: ${APPLE_ID:+present}"
+          echo "APP_PASS: ${APP_PASS:+present}"
+          echo "TEAM_ID: ${TEAM_ID:+present}"
+          echo "can_sign=$([ -n "$P12_BASE64" ] && [ -n "$P12_PASSWORD" ] && [ -n "$DEV_ID" ] && echo "true" || echo "false")" >> $GITHUB_OUTPUT
+          echo "can_notarize=$([ -n "$APPLE_ID" ] && [ -n "$APP_PASS" ] && [ -n "$TEAM_ID" ] && echo "true" || echo "false")" >> $GITHUB_OUTPUT
+
       - name: Import Developer ID Certificate
+        if: steps.check-signing.outputs.can_sign == 'true'
         uses: apple-actions/import-codesign-certs@v5
         with:
           p12-file-base64: ${{ secrets.DEV_ID_P12_BASE64 }}
-          p12-password:    ${{ secrets.DEV_ID_P12_PASSWORD }}
-
-      - name: Build & Assemble Universal .app
-        run: |
-          APP="${{ env.APP_NAME }}.app"
-          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-
-          # 1) Merge slices
-          lipo slice-x86_64/${{ env.BINARY_NAME }} \
-               slice-arm64/${{ env.BINARY_NAME }} \
-            -create -output "$APP/Contents/MacOS/${{ env.APP_NAME }}"
-
-          # 2) Write Info.plist
-          cat > "$APP/Contents/Info.plist" <<EOF
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-                   "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0"><dict>
-            <key>CFBundleName</key><string>${{ env.APP_NAME }}</string>
-            <key>CFBundleDisplayName</key><string>${{ env.APP_NAME }}</string>
-            <key>CFBundleIdentifier</key><string>com.github.se2cird2.${{ env.APP_NAME }}</string>
-            <key>CFBundleVersion</key><string>${{ env.VERSION }}</string>
-            <key>CFBundleShortVersionString</key><string>${{ env.VERSION }}</string>
-            <key>CFBundleExecutable</key><string>${{ env.APP_NAME }}</string>
-            <key>CFBundlePackageType</key><string>APPL</string>
-            <key>CFBundleIconFile</key><string>icon.icns</string>
-          </dict></plist>
-          EOF
-
-          # 3) Generate .icns from PNG
-          sips -s format icns "${{ env.ICON_PNG }}" \
-            --out "$APP/Contents/Resources/icon.icns"
-
-          # 4) Clean any stray xattrs
-          xattr -rc "$APP"
+          p12-password: ${{ secrets.DEV_ID_P12_PASSWORD }}
 
       - name: Code-sign with Hardened Runtime & Timestamp
+        if: steps.check-signing.outputs.can_sign == 'true'
         run: |
           APP="${{ env.APP_NAME }}.app"
           codesign --force --deep --options runtime --timestamp \
@@ -245,7 +234,8 @@ jobs:
         if: |
           github.event_name == 'push' && 
           github.ref == 'refs/heads/master' &&
-          steps.check-notarization.outputs.can_notarize == 'true'
+          steps.check-signing.outputs.can_sign == 'true' &&
+          steps.check-signing.outputs.can_notarize == 'true'
         run: |
           DMG=$(cat dmg-path.txt)
           xcrun notarytool submit "$DMG" \
