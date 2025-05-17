@@ -160,11 +160,27 @@ jobs:
           name: slice-arm64
           path: slice-arm64
 
+      - name: Check for signing secrets
+        id: check-secrets
+        run: |
+          if [ -n "${{ secrets.DEV_ID_P12_BASE64 }}" ] && \
+             [ -n "${{ secrets.DEV_ID_P12_PASSWORD }}" ] && \
+             [ -n "${{ secrets.DEV_IDENTITY_NAME }}" ] && \
+             [ -n "${{ secrets.NOTARIZE_APPLE_ID }}" ] && \
+             [ -n "${{ secrets.NOTARIZE_APP_SPECIFIC_PASS }}" ] && \
+             [ -n "${{ secrets.NOTARIZE_TEAM_ID }}" ] && \
+             [ "${{ github.event_name }}" == "push" ]; then
+            echo "should_sign=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_sign=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Import Developer ID Certificate
+        if: steps.check-secrets.outputs.should_sign == 'true'
         uses: apple-actions/import-codesign-certs@v5
         with:
           p12-file-base64: ${{ secrets.DEV_ID_P12_BASE64 }}
-          p12-password:    ${{ secrets.DEV_ID_P12_PASSWORD }}
+          p12-password: ${{ secrets.DEV_ID_P12_PASSWORD }}
 
       - name: Build & Assemble Universal .app
         run: |
@@ -201,6 +217,7 @@ jobs:
           xattr -rc "$APP"
 
       - name: Code-sign with Hardened Runtime & Timestamp
+        if: steps.check-secrets.outputs.should_sign == 'true'
         run: |
           APP="${{ env.APP_NAME }}.app"
           codesign --force --deep --options runtime --timestamp \
@@ -215,7 +232,12 @@ jobs:
 
       - name: Create DMG
         run: |
-          DMG="dist/${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg"
+          if [ "${{ steps.check-secrets.outputs.should_sign }}" == "true" ]; then
+            DMG_NAME="${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg"
+          else
+            DMG_NAME="${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal-unsigned.dmg"
+          fi
+          DMG="dist/$DMG_NAME"
           mkdir -p dist dmg-staging
           cp -R "${{ env.APP_NAME }}.app" dmg-staging/
           ln -s /Applications dmg-staging/Applications
@@ -226,8 +248,10 @@ jobs:
             "$DMG"
           rm -rf dmg-staging
           echo "$DMG" > dmg-path.txt
+          echo "$DMG_NAME" > dmg-name.txt
 
       - name: Notarize & Staple DMG
+        if: steps.check-secrets.outputs.should_sign == 'true'
         run: |
           DMG=$(cat dmg-path.txt)
           xcrun notarytool submit "$DMG" \
@@ -237,11 +261,11 @@ jobs:
             --wait --verbose
           xcrun stapler staple "$DMG"
 
-      - name: Upload Notarized DMG
+      - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg
-          path: dist/${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg
+          name: ${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal${{ steps.check-secrets.outputs.should_sign != 'true' && '-unsigned' || '' }}.dmg
+          path: dist/${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal${{ steps.check-secrets.outputs.should_sign != 'true' && '-unsigned' || '' }}.dmg
 
 
   # Windows build
