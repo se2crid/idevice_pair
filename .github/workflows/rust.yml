@@ -144,9 +144,6 @@ jobs:
     name: Create, Sign, Notarize & Upload Universal DMG
     needs: macos-universal
     runs-on: macos-latest
-    env:
-      DMG_NAME: ${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg
-      UNSIGNED_DMG_NAME: ${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal-unsigned.dmg
 
     steps:
       - uses: actions/checkout@v3
@@ -162,14 +159,6 @@ jobs:
         with:
           name: slice-arm64
           path: slice-arm64
-
-      # only import cert if both p12 and its password exist
-      - name: Import Developer ID Certificate
-        if: ${{ secrets.DEV_ID_P12_BASE64 && secrets.DEV_ID_P12_PASSWORD }}
-        uses: apple-actions/import-codesign-certs@v5
-        with:
-          p12-file-base64: ${{ secrets.DEV_ID_P12_BASE64 }}
-          p12-password:    ${{ secrets.DEV_ID_P12_PASSWORD }}
 
       - name: Build & Assemble Universal .app
         run: |
@@ -193,16 +182,8 @@ jobs:
             <key>CFBundleIconFile</key><string>icon.icns</string>
           </dict></plist>
           EOF
-          sips -s format icns "${{ env.ICON_PNG }}" \
-            --out "$APP/Contents/Resources/icon.icns"
+          sips -s format icns "${{ env.ICON_PNG }}" --out "$APP/Contents/Resources/icon.icns"
           xattr -rc "$APP"
-
-      - name: Code-sign with Hardened Runtime & Timestamp
-        if: ${{ secrets.DEV_IDENTITY_NAME }}
-        run: |
-          APP="${{ env.APP_NAME }}.app"
-          codesign --force --deep --options runtime --timestamp \
-            --sign "${{ secrets.DEV_IDENTITY_NAME }}" "$APP"
 
       - name: Fix Permissions
         run: |
@@ -220,41 +201,50 @@ jobs:
             -volname "${{ env.APP_NAME }}" \
             -srcfolder dmg-staging \
             -ov -format UDZO \
-            "dist/${{ env.DMG_NAME }}"
+            "dist/${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg"
           rm -rf dmg-staging
-          echo "dist/${{ env.DMG_NAME }}" > dmg-path.txt
+          echo "dist/${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg" > dmg-path.txt
 
-      # only notarize & staple if all three exist
-      - name: Notarize & Staple DMG
-        if: ${{ secrets.NOTARIZE_APPLE_ID && secrets.NOTARIZE_APP_SPECIFIC_PASS && secrets.NOTARIZE_TEAM_ID }}
+      - name: Conditional Sign & Notarize
+        if: github.event_name == 'push'
+        env:
+          HAS_ALL_SECRETS: ${{ secrets.DEV_ID_P12_BASE64 && secrets.DEV_ID_P12_PASSWORD && secrets.DEV_IDENTITY_NAME && secrets.NOTARIZE_APPLE_ID && secrets.NOTARIZE_APP_SPECIFIC_PASS && secrets.NOTARIZE_TEAM_ID }}
         run: |
+          if [ -z "${HAS_ALL_SECRETS}" ]; then
+            echo "Missing signing/notarization secrets, skipping..."
+            DMG=$(cat dmg-path.txt)
+            mv "$DMG" "${DMG%.dmg}-unsigned.dmg"
+            echo "${DMG%.dmg}-unsigned.dmg" > dmg-path.txt
+            exit 0
+          fi
+
+          echo "All secrets present, proceeding with signing and notarization."
+
+          echo "Importing Developer ID cert..."
+          echo "${{ secrets.DEV_ID_P12_BASE64 }}" | base64 --decode > cert.p12
+          security import cert.p12 -P "${{ secrets.DEV_ID_P12_PASSWORD }}" -A
+
+          APP="${{ env.APP_NAME }}.app"
+          codesign --force --deep --options runtime --timestamp \
+            --sign "${{ secrets.DEV_IDENTITY_NAME }}" "$APP"
+
           DMG=$(cat dmg-path.txt)
           xcrun notarytool submit "$DMG" \
             --apple-id "${{ secrets.NOTARIZE_APPLE_ID }}" \
             --password "${{ secrets.NOTARIZE_APP_SPECIFIC_PASS }}" \
             --team-id "${{ secrets.NOTARIZE_TEAM_ID }}" \
             --wait --verbose
+
           xcrun stapler staple "$DMG"
 
-      # upload signed if we did notarize…
-      - name: Upload Notarized DMG
-        if: ${{ secrets.NOTARIZE_APPLE_ID && secrets.NOTARIZE_APP_SPECIFIC_PASS && secrets.NOTARIZE_TEAM_ID }}
+      - name: Upload DMG
+        run: |
+          DMG=$(cat dmg-path.txt)
+          echo "Uploading $DMG"
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg
-          path: dist/${{ env.DMG_NAME }}
-
-      # otherwise rename & upload the unsigned DMG
-      - name: Rename Unsigned DMG
-        if: ${{ !(secrets.NOTARIZE_APPLE_ID && secrets.NOTARIZE_APP_SPECIFIC_PASS && secrets.NOTARIZE_TEAM_ID) }}
-        run: mv "dist/${{ env.DMG_NAME }}" "dist/${{ env.UNSIGNED_DMG_NAME }}"
-
-      - name: Upload Unsigned DMG
-        if: ${{ !(secrets.NOTARIZE_APPLE_ID && secrets.NOTARIZE_APP_SPECIFIC_PASS && secrets.NOTARIZE_TEAM_ID) }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal-unsigned.dmg
-          path: dist/${{ env.UNSIGNED_DMG_NAME }}
+          path: ${{ steps.upload.outputs.DMG }}
 
   # Windows build
   build-windows:
