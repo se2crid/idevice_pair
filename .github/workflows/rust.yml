@@ -63,11 +63,7 @@ jobs:
             pkg-config \
             libfuse2 \
             appstream \
-            usbmuxd \
-            libimobiledevice6 \
-            libimobiledevice-utils \
-            libusbmuxd-tools \
-            libplist3
+            usbmuxd 
 
       # Build and package
       - name: Build binary
