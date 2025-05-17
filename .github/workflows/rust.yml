@@ -208,20 +208,23 @@ jobs:
       - name: Conditional Sign & Notarize (push only)
         if: github.event_name == 'push'
         run: |
-          # Check for presence of all secrets (just existence)
+      - name: Conditional Sign & Notarize (skip PRs)
+        if: github.event_name != 'pull_request'
+        run: |
+          # If any secret is missing, rename to "-unsigned" and exit cleanly
           if [ -z "${{ secrets.DEV_ID_P12_BASE64 }}" ] \
              || [ -z "${{ secrets.DEV_ID_P12_PASSWORD }}" ] \
              || [ -z "${{ secrets.DEV_IDENTITY_NAME }}" ] \
              || [ -z "${{ secrets.NOTARIZE_APPLE_ID }}" ] \
              || [ -z "${{ secrets.NOTARIZE_APP_SPECIFIC_PASS }}" ] \
              || [ -z "${{ secrets.NOTARIZE_TEAM_ID }}" ]; then
-            echo "🔒 Missing one or more signing/notarization secrets. Skipping…"
+            echo "🔒 Missing signing/notarization secrets, skipping…"
             mv "dist/${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg" \
                "dist/${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal-unsigned.dmg"
             exit 0
           fi
 
-          echo "✅ All secrets present. Importing cert and signing…"
+          echo "✅ Secrets OK, importing cert…"
           echo "${{ secrets.DEV_ID_P12_BASE64 }}" | base64 --decode > cert.p12
           security import cert.p12 -P "${{ secrets.DEV_ID_P12_PASSWORD }}" -A
 
@@ -232,6 +235,12 @@ jobs:
           DMG="dist/${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg"
           echo "📬 Notarizing $DMG…"
           xcrun notarytool submit "$DMG" \
+            --apple-id "${{ secrets.NOTARIZE_APPLE_ID }}" \
+            --password "${{ secrets.NOTARIZE_APP_SPECIFIC_PASS }}" \
+            --team-id "${{ secrets.NOTARIZE_TEAM_ID }}" \
+            --wait --verbose
+          xcrun stapler staple "$DMG"
+
             --apple-id "${{ secrets.NOTARIZE_APPLE_ID }}" \
             --password "${{ secrets.NOTARIZE_APP_SPECIFIC_PASS }}" \
             --team-id "${{ secrets.NOTARIZE_TEAM_ID }}" \
