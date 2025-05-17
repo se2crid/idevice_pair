@@ -160,6 +160,60 @@ jobs:
           name: slice-arm64
           path: slice-arm64
 
+      - name: Build & Assemble Universal .app
+        run: |
+          APP="${{ env.APP_NAME }}.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          
+          # Merge slices and create .app bundle
+          lipo slice-x86_64/${{ env.BINARY_NAME }} \
+               slice-arm64/${{ env.BINARY_NAME }} \
+            -create -output "$APP/Contents/MacOS/${{ env.APP_NAME }}"
+          
+          # Write Info.plist and generate icons
+          INFO_PLIST="<?xml version='1.0' encoding='UTF-8'?>
+          <!DOCTYPE plist PUBLIC '-//Apple//DTD PLIST 1.0//EN' 'http://www.apple.com/DTDs/PropertyList-1.0.dtd'>
+          <plist version='1.0'>
+          <dict>
+            <key>CFBundleExecutable</key>
+            <string>${{ env.APP_NAME }}</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.yourcompany.${{ env.APP_NAME }}</string>
+            <key>CFBundleName</key>
+            <string>${{ env.APP_NAME }}</string>
+            <key>CFBundleVersion</key>
+            <string>${{ env.VERSION }}</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleSignature</key>
+            <string>????</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+          </dict>
+          </plist>"
+          echo "$INFO_PLIST" > "$APP/Contents/Info.plist"
+          ICONSET="$APP/Contents/Resources/icons.iconset"
+          mkdir -p "$ICONSET"
+          sips -z 16 16     "$APP/Contents/Resources/${{ env.ICON_PNG }}" --out "$ICONSET/icon_16x16.png"
+          sips -z 32 32     "$APP/Contents/Resources/${{ env.ICON_PNG }}" --out "$ICONSET/icon_16x16@2x.png"
+          sips -z 32 32     "$APP/Contents/Resources/${{ env.ICON_PNG }}" --out "$ICONSET/icon_32x32.png"
+          sips -z 64 64     "$APP/Contents/Resources/${{ env.ICON_PNG }}" --out "$ICONSET/icon_32x32@2x.png"
+          sips -z 128 128   "$APP/Contents/Resources/${{ env.ICON_PNG }}" --out "$ICONSET/icon_128x128.png"
+          sips -z 256 256   "$APP/Contents/Resources/${{ env.ICON_PNG }}" --out "$ICONSET/icon_128x128@2x.png"
+          sips -z 256 256   "$APP/Contents/Resources/${{ env.ICON_PNG }}" --out "$ICONSET/icon_256x256.png"
+          sips -z 512 512   "$APP/Contents/Resources/${{ env.ICON_PNG }}" --out "$ICONSET/icon_256x256@2x.png"
+          sips -z 1024 1024 "$APP/Contents/Resources/${{ env.ICON_PNG }}" --out "$ICONSET/icon_512x512.png"
+          sips -z 2048 2048 "$APP/Contents/Resources/${{ env.ICON_PNG }}" --out "$ICONSET/icon_512x512@2x.png"
+          iconutil --convert icns --output "$APP/Contents/Resources/${{ env.APP_NAME }}.icns" "$ICONSET"
+          rm -r "$ICONSET"
+
+      - name: Fix Permissions
+        run: |
+          APP="${{ env.APP_NAME }}.app"
+          find "$APP" -type d -exec chmod 755 {} +
+          find "$APP" -type f -exec chmod 644 {} +
+          chmod +x "$APP/Contents/MacOS/${{ env.APP_NAME }}"
+
       - name: Check Signing Requirements
         id: check-signing
         env:
@@ -172,12 +226,8 @@ jobs:
         run: |
           echo "Running on: ${{ github.ref }}"
           echo "Event type: ${{ github.event_name }}"
-          echo "P12 Certificate: ${P12_BASE64:+present}"
-          echo "P12 Password: ${P12_PASSWORD:+present}"
-          echo "Developer ID: ${DEV_ID:+present}"
-          echo "APPLE_ID: ${APPLE_ID:+present}"
-          echo "APP_PASS: ${APP_PASS:+present}"
-          echo "TEAM_ID: ${TEAM_ID:+present}"
+          echo "Code signing available: $([ -n "$P12_BASE64" ] && [ -n "$P12_PASSWORD" ] && [ -n "$DEV_ID" ] && echo "yes" || echo "no")"
+          echo "Notarization available: $([ -n "$APPLE_ID" ] && [ -n "$APP_PASS" ] && [ -n "$TEAM_ID" ] && echo "yes" || echo "no")"
           echo "can_sign=$([ -n "$P12_BASE64" ] && [ -n "$P12_PASSWORD" ] && [ -n "$DEV_ID" ] && echo "true" || echo "false")" >> $GITHUB_OUTPUT
           echo "can_notarize=$([ -n "$APPLE_ID" ] && [ -n "$APP_PASS" ] && [ -n "$TEAM_ID" ] && echo "true" || echo "false")" >> $GITHUB_OUTPUT
 
@@ -195,13 +245,6 @@ jobs:
           codesign --force --deep --options runtime --timestamp \
             --sign "${{ secrets.DEV_IDENTITY_NAME }}" "$APP"
 
-      - name: Fix Permissions
-        run: |
-          APP="${{ env.APP_NAME }}.app"
-          find "$APP" -type d -exec chmod 755 {} +
-          find "$APP" -type f -exec chmod 644 {} +
-          chmod +x "$APP/Contents/MacOS/${{ env.APP_NAME }}"
-
       - name: Create DMG
         run: |
           DMG="dist/${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg"
@@ -215,20 +258,6 @@ jobs:
             "$DMG"
           rm -rf dmg-staging
           echo "$DMG" > dmg-path.txt
-
-      - name: Check Notarization Requirements
-        id: check-notarization
-        env:
-          APPLE_ID: ${{ secrets.NOTARIZE_APPLE_ID }}
-          APP_PASS: ${{ secrets.NOTARIZE_APP_SPECIFIC_PASS }}
-          TEAM_ID: ${{ secrets.NOTARIZE_TEAM_ID }}
-        run: |
-          echo "Running on: ${{ github.ref }}"
-          echo "Event type: ${{ github.event_name }}"
-          echo "APPLE_ID secret: ${APPLE_ID:+present}"
-          echo "APP_SPECIFIC_PASS secret: ${APP_PASS:+present}"
-          echo "TEAM_ID secret: ${TEAM_ID:+present}"
-          echo "can_notarize=$([ -n "$APPLE_ID" ] && [ -n "$APP_PASS" ] && [ -n "$TEAM_ID" ] && echo "true" || echo "false")" >> $GITHUB_OUTPUT
 
       - name: Notarize & Staple DMG
         if: |
@@ -248,7 +277,7 @@ jobs:
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg
+          name: ${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal${{ steps.check-signing.outputs.can_sign == 'true' && '-signed' || '' }}.dmg
           path: dist/${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg
 
 
