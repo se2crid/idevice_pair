@@ -82,41 +82,83 @@ jobs:
       - name: Prepare AppDir
         run: |
           # Create directory structure
-          mkdir -p AppDir/{usr/{bin,lib,share},etc/{udev/rules.d,init.d}}
+          mkdir -p AppDir/{usr/{bin,lib,share},etc/udev/rules.d,var/{lib,run}/usbmuxd}
           
           # Copy binaries and libraries
           cp target/${{ matrix.target }}/release/${{ env.BINARY_NAME }} AppDir/usr/bin/
           cp $(which usbmuxd) AppDir/usr/bin/
           cp $(which iproxy) AppDir/usr/bin/
           
-          # Copy shared libraries
-          ldd AppDir/usr/bin/usbmuxd | grep "=> /" | awk '{print $3}' | xargs -I '{}' cp -v '{}' AppDir/usr/lib/ || true
+          # Copy ALL required libraries and their dependencies
+          for bin in usbmuxd iproxy; do
+            ldd $(which $bin) | grep "=> /" | awk '{print $3}' | xargs -I '{}' cp -v '{}' AppDir/usr/lib/ || true
+            for lib in AppDir/usr/lib/*.so*; do
+              if [ -f "$lib" ]; then
+                ldd "$lib" 2>/dev/null | grep "=> /" | awk '{print $3}' | xargs -I '{}' cp -v '{}' AppDir/usr/lib/ || true
+              fi
+            done
+          done
           
-          # Copy udev rules
-          sudo cp /lib/udev/rules.d/39-usbmuxd.rules AppDir/etc/udev/rules.d/
-          
-          # Create startup script
+          # Create usbmuxd wrapper script
           cat > AppDir/usr/bin/start-usbmuxd.sh <<'EOF'
           #!/bin/bash
-          if ! pgrep usbmuxd >/dev/null; then
-            killall usbmuxd 2>/dev/null || true
-            sudo LD_LIBRARY_PATH="./usr/lib:$LD_LIBRARY_PATH" ./usr/bin/usbmuxd -f -v &
-            sleep 2
-          fi
+          set -e
+          
+          HERE="$(dirname "$(readlink -f "${0}")")"
+          RUNTIME_DIR="${HERE}/../var/run/usbmuxd"
+          STATE_DIR="${HERE}/../var/lib/usbmuxd"
+          
+          # Cleanup any existing instances
+          rm -f "${RUNTIME_DIR}/usbmuxd.pid" "${RUNTIME_DIR}/usbmuxd.socket"
+          pkill usbmuxd 2>/dev/null || true
+          sleep 1
+          
+          # Ensure directories exist and are writable
+          mkdir -p "${RUNTIME_DIR}" "${STATE_DIR}"
+          chmod 755 "${RUNTIME_DIR}" "${STATE_DIR}"
+          
+          echo "Starting usbmuxd..."
+          export LD_LIBRARY_PATH="${HERE}/../lib:${LD_LIBRARY_PATH}"
+          
+          # Start usbmuxd with proper paths
+          ${HERE}/usbmuxd \
+            -f \
+            -v \
+            -U $(id -u) \
+            -r "${RUNTIME_DIR}" \
+            -s "${STATE_DIR}/state.db" &
+          
+          # Wait for socket
+          for i in {1..10}; do
+            if [ -S "${RUNTIME_DIR}/usbmuxd.socket" ]; then
+              echo "usbmuxd started successfully"
+              return 0
+            fi
+            sleep 1
+          done
+          
+          echo "Failed to start usbmuxd"
+          exit 1
           EOF
           chmod +x AppDir/usr/bin/start-usbmuxd.sh
           
-          # Create AppRun with daemon startup
+          # Create AppRun with error handling
           cat > AppDir/AppRun <<'EOF'
           #!/bin/bash
+          set -e
+          
           HERE="$(dirname "$(readlink -f "${0}")")"
           export PATH="${HERE}/usr/bin:${PATH}"
           export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH}"
+          export USBMUXD_SOCKET_ADDRESS="${HERE}/usr/var/run/usbmuxd/usbmuxd.socket"
           
-          # Start usbmuxd if needed
-          "${HERE}/usr/bin/start-usbmuxd.sh"
+          echo "Starting services..."
+          "${HERE}/usr/bin/start-usbmuxd.sh" || {
+            echo "ERROR: Failed to start usbmuxd"
+            exit 1
+          }
           
-          # Run main application
+          echo "Starting main application..."
           exec "${HERE}/usr/bin/${{ env.BINARY_NAME }}" "$@"
           EOF
           chmod +x AppDir/AppRun
