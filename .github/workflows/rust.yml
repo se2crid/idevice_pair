@@ -60,18 +60,44 @@ jobs:
             libglib2.0-dev libatk1.0-dev libgtk-3-dev \
             pkg-config libfuse2 appstream usbmuxd \
             libimobiledevice6 libimobiledevice-utils \
-            libusbmuxd-tools curl
+            libusbmuxd-tools
 
-      - name: Install usbmuxd systemd units
+      - name: Install usbmuxd systemd units inline
         run: |
-          # Download and install upstream systemd unit templates
-          sudo curl -fsSL \
-            https://raw.githubusercontent.com/libimobiledevice/usbmuxd/master/systemd/usbmuxd.socket.in \
-            -o /etc/systemd/system/usbmuxd.socket
-          sudo curl -fsSL \
-            https://raw.githubusercontent.com/libimobiledevice/usbmuxd/master/systemd/usbmuxd.service.in \
-            -o /etc/systemd/system/usbmuxd.service
+          # Write minimal socket unit
+          sudo tee /etc/systemd/system/usbmuxd.socket > /dev/null <<'EOF'
+          [Unit]
+          Description=USB Multiplex Daemon Socket
+
+          [Socket]
+          ListenStream=/var/run/usbmuxd
+          SocketUser=root
+          SocketGroup=plugdev
+          SocketMode=0660
+
+          [Install]
+          WantedBy=sockets.target
+          EOF
+
+          # Write minimal service unit
+          sudo tee /etc/systemd/system/usbmuxd.service > /dev/null <<'EOF'
+          [Unit]
+          Description=USB Multiplex Daemon
+          Requires=usbmuxd.socket
+          After=usbmuxd.socket
+
+          [Service]
+          Type=simple
+          ExecStart=/usr/bin/usbmuxd --systemd --foreground --verbose
+          Restart=on-failure
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+
+          # Reload systemd to pick them up
           sudo systemctl daemon-reload
+          echo "Installed usbmuxd.socket and usbmuxd.service"  
 
       - name: Enable & start usbmuxd socket
         run: |
@@ -98,7 +124,7 @@ jobs:
           # Copy udev rules
           cp /lib/udev/rules.d/39-usbmuxd.rules           $APPDIR/etc/udev/rules.d/
 
-          # Bundle all required shared libraries
+          # Bundle shared libraries
           for bin in $APPDIR/usr/bin/*; do
             ldd "$bin" \
               | grep "=> /" \
@@ -106,7 +132,7 @@ jobs:
               | xargs -r -I '{}' cp -v '{}' $APPDIR/usr/lib/
           done
 
-          # Install icon and desktop file
+          # Install icon & desktop file
           ICON_NAME=${ICON_PNG##*/}; BASENAME=${ICON_NAME%.*}
           cp ${{ env.ICON_PNG }} $APPDIR/${BASENAME}.png
           cp ${{ env.ICON_PNG }} $APPDIR/usr/share/icons/hicolor/256x256/apps/${BASENAME}.png
@@ -133,18 +159,15 @@ jobs:
           # Launch usbmuxd in foreground if not already running
           if ! pgrep -x usbmuxd &>/dev/null; then
             "\$HERE/usr/bin/usbmuxd" --foreground --verbose &
-            # Wait up to 5s for the socket
             for i in {1..10}; do
               [ -S /var/run/usbmuxd ] && break
               sleep 0.5
             done
           fi
 
-          # Prepend our AppDir tools/libs
           export PATH="\$HERE/usr/bin:\$PATH"
           export LD_LIBRARY_PATH="\$HERE/usr/lib:\${LD_LIBRARY_PATH:-}"
 
-          # Exec the main binary
           exec "\$HERE/usr/bin/${{ env.BINARY_NAME }}" "\$@"
           EOF
           chmod +x AppDir/AppRun
