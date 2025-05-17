@@ -197,30 +197,31 @@ jobs:
           mkdir -p dist dmg-staging
           cp -R "${{ env.APP_NAME }}.app" dmg-staging/
           ln -s /Applications dmg-staging/Applications
+          DMG="dist/${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg"
           hdiutil create \
             -volname "${{ env.APP_NAME }}" \
             -srcfolder dmg-staging \
             -ov -format UDZO \
-            "dist/${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg"
+            "$DMG"
           rm -rf dmg-staging
-          echo "dist/${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg" > dmg-path.txt
 
-      - name: Conditional Sign & Notarize
+      - name: Conditional Sign & Notarize (push only)
         if: github.event_name == 'push'
-        env:
-          HAS_ALL_SECRETS: ${{ secrets.DEV_ID_P12_BASE64 && secrets.DEV_ID_P12_PASSWORD && secrets.DEV_IDENTITY_NAME && secrets.NOTARIZE_APPLE_ID && secrets.NOTARIZE_APP_SPECIFIC_PASS && secrets.NOTARIZE_TEAM_ID }}
         run: |
-          if [ -z "${HAS_ALL_SECRETS}" ]; then
-            echo "Missing signing/notarization secrets, skipping..."
-            DMG=$(cat dmg-path.txt)
-            mv "$DMG" "${DMG%.dmg}-unsigned.dmg"
-            echo "${DMG%.dmg}-unsigned.dmg" > dmg-path.txt
+          # Check for presence of all secrets (just existence)
+          if [ -z "${{ secrets.DEV_ID_P12_BASE64 }}" ] \
+             || [ -z "${{ secrets.DEV_ID_P12_PASSWORD }}" ] \
+             || [ -z "${{ secrets.DEV_IDENTITY_NAME }}" ] \
+             || [ -z "${{ secrets.NOTARIZE_APPLE_ID }}" ] \
+             || [ -z "${{ secrets.NOTARIZE_APP_SPECIFIC_PASS }}" ] \
+             || [ -z "${{ secrets.NOTARIZE_TEAM_ID }}" ]; then
+            echo "🔒 Missing one or more signing/notarization secrets. Skipping…"
+            mv "dist/${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg" \
+               "dist/${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal-unsigned.dmg"
             exit 0
           fi
 
-          echo "All secrets present, proceeding with signing and notarization."
-
-          echo "Importing Developer ID cert..."
+          echo "✅ All secrets present. Importing cert and signing…"
           echo "${{ secrets.DEV_ID_P12_BASE64 }}" | base64 --decode > cert.p12
           security import cert.p12 -P "${{ secrets.DEV_ID_P12_PASSWORD }}" -A
 
@@ -228,23 +229,21 @@ jobs:
           codesign --force --deep --options runtime --timestamp \
             --sign "${{ secrets.DEV_IDENTITY_NAME }}" "$APP"
 
-          DMG=$(cat dmg-path.txt)
+          DMG="dist/${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg"
+          echo "📬 Notarizing $DMG…"
           xcrun notarytool submit "$DMG" \
             --apple-id "${{ secrets.NOTARIZE_APPLE_ID }}" \
             --password "${{ secrets.NOTARIZE_APP_SPECIFIC_PASS }}" \
             --team-id "${{ secrets.NOTARIZE_TEAM_ID }}" \
             --wait --verbose
-
           xcrun stapler staple "$DMG"
 
       - name: Upload DMG
-        run: |
-          DMG=$(cat dmg-path.txt)
-          echo "Uploading $DMG"
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg
-          path: ${{ steps.upload.outputs.DMG }}
+          path: dist/${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal*.dmg
+
 
   # Windows build
   build-windows:
