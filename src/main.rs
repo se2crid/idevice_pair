@@ -61,6 +61,7 @@ fn main() {
         gui_recv,
         idevice_sender: idevice_sender.clone(),
         show_logs: false,
+        jitterbug_legacy: false,
     };
 
     let d = eframe::icon_data::from_png_bytes(include_bytes!("../icon.png"))
@@ -561,6 +562,8 @@ struct MyApp {
     idevice_sender: UnboundedSender<IdeviceCommands>,
 
     show_logs: bool,
+
+    jitterbug_legacy: bool,
 }
 
 impl eframe::App for MyApp {
@@ -819,25 +822,37 @@ impl eframe::App for MyApp {
                                 if let Some(msg) = &self.save_error {
                                     ui.label(RichText::new(msg).color(Color32::RED));
                                 }
+                                ui.checkbox(&mut self.jitterbug_legacy, "Jitterbug Legacy Mode");
                                 ui.label("Save this file to your computer, and then transfer it to your device manually.");
                                 if ui.button("Save to File").clicked() {
                                     if let Some(p) = FileDialog::new()
                                         .set_can_create_directories(true)
                                         .set_title("Save Pairing File")
-                                        .set_file_name(format!("{}.plist", &dev.udid))
+                                        .set_file_name(format!("{}{}", &dev.udid, 
+                                            if self.jitterbug_legacy {".mobiledevicepairing"} else {".plist"}))
                                         .save_file()
                                     {
                                         self.save_error = None;
-                                        if let Err(e) = std::fs::write(
-                                            p,
-                                            self.pairing_file
-                                                .as_ref()
-                                                .unwrap()
-                                                .clone()
-                                                .serialize()
-                                                .unwrap(),
-                                        ) {
-                                            self.save_error = Some(e.to_string());
+                                        let mut pairing_file = self.pairing_file.as_ref().unwrap().clone();
+                                        
+                                        // Only modify pairing file in jitterbug legacy mode
+                                        if self.jitterbug_legacy {
+                                            pairing_file.udid = Some(dev.udid.clone());
+                                        }
+                                        
+                                        match pairing_file.serialize() {
+                                            Ok(data) => {
+                                                if let Err(e) = std::fs::write(&p, data) {
+                                                    self.save_error = Some(format!(
+                                                        "Failed to write pairing file: {}", e));
+                                                } else {
+                                                    log::info!("Successfully saved pairing file to: {}", p.display());
+                                                }
+                                            }
+                                            Err(e) => {
+                                                self.save_error = Some(format!(
+                                                    "Failed to serialize pairing file: {}", e));
+                                            }
                                         }
                                     }
                                 }
