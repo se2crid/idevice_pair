@@ -263,13 +263,15 @@ fn main() {
                         }
                     };
 
-                    let pairing_file = match uc.get_pair_record(&dev.udid).await {
+                    let mut pairing_file = match uc.get_pair_record(&dev.udid).await {
                         Ok(p) => p,
                         Err(e) => {
                             gui_sender.send(GuiCommands::PairingFile(Err(e))).unwrap();
                             continue;
                         }
                     };
+                    pairing_file.udid = Some(dev.udid);
+
                     gui_sender
                         .send(GuiCommands::PairingFile(Ok(pairing_file)))
                         .unwrap();
