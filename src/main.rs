@@ -625,25 +625,27 @@ impl eframe::App for MyApp {
             },
         }
         if self.show_logs {
-            egui::Window::new("logs").show(ctx, |ui| {
-                egui_logger::logger_ui()
-                    .warn_color(Color32::BLACK) // the yellow is too bright in dark mode
-                    .log_levels([true, true, true, true, false])
-                    .enable_category("idevice".to_string(), true)
-                    // there should be a way to set default false...
-                    .enable_category("mdns::mdns".to_string(), false)
-                    .enable_category("eframe".to_string(), false)
-                    .enable_category("eframe::native::glow_integration".to_string(), false)
-                    .enable_category("egui_glow::shader_version".to_string(), false)
-                    .enable_category("egui_glow::vao".to_string(), false)
-                    .enable_category("egui_glow::painter".to_string(), false)
-                    .enable_category("rustls::client::hs".to_string(), false)
-                    .enable_category("rustls::client::tls12".to_string(), false)
-                    .enable_category("rustls::client::common".to_string(), false)
-                    .enable_category("idevice_pair::discover".to_string(), false)
-                    .enable_category("reqwest::connect".to_string(), false)
-                    .show(ui);
-            });
+            egui::Window::new("logs")
+                .open(&mut self.show_logs)
+                .show(ctx, |ui| {
+                    egui_logger::logger_ui()
+                        .warn_color(Color32::BLACK) // the yellow is too bright in dark mode
+                        .log_levels([true, true, true, true, false])
+                        .enable_category("idevice".to_string(), true)
+                        // there should be a way to set default false...
+                        .enable_category("mdns::mdns".to_string(), false)
+                        .enable_category("eframe".to_string(), false)
+                        .enable_category("eframe::native::glow_integration".to_string(), false)
+                        .enable_category("egui_glow::shader_version".to_string(), false)
+                        .enable_category("egui_glow::vao".to_string(), false)
+                        .enable_category("egui_glow::painter".to_string(), false)
+                        .enable_category("rustls::client::hs".to_string(), false)
+                        .enable_category("rustls::client::tls12".to_string(), false)
+                        .enable_category("rustls::client::common".to_string(), false)
+                        .enable_category("idevice_pair::discover".to_string(), false)
+                        .enable_category("reqwest::connect".to_string(), false)
+                        .show(ui);
+                });
         }
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
