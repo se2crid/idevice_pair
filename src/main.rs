@@ -75,9 +75,10 @@ fn main() {
         .unwrap();
 
     rt.spawn(async move {
-        discover::start_discover(idevice_sender).await;
+        discover::start_discover(idevice_sender.clone()).await;
     });
 
+    // This async task handles the idevice commands and sends GUI updates.
     rt.spawn(async move {
         let gui_sender = gui_sender.clone();
         let mut discovered_devices: HashMap<String, IpAddr> = HashMap::new(); // mac, IP
@@ -239,13 +240,11 @@ fn main() {
                     match v.as_boolean() {
                         Some(b) => {
                             gui_sender.send(GuiCommands::DevMode(Ok(b))).unwrap();
-                            continue;
                         }
                         None => {
                             gui_sender
                                 .send(GuiCommands::DevMode(Err(IdeviceError::UnexpectedResponse)))
                                 .unwrap();
-                            continue;
                         }
                     }
                 }
@@ -377,24 +376,21 @@ fn main() {
 
                     let mut installed = HashMap::new();
                     for (bundle_id, app) in installed_apps {
-                        match app
+                        if let Some(n) = app
                             .as_dictionary()
                             .and_then(|x| x.get("CFBundleDisplayName").and_then(|x| x.as_string()))
                         {
-                            Some(n) => {
-                                if desired_apps.contains(&n.to_string()) {
-                                    installed.insert(n.to_string(), bundle_id);
-                                }
+                            if desired_apps.contains(&n.to_string()) {
+                                installed.insert(n.to_string(), bundle_id);
                             }
-                            None => {
-                                gui_sender
-                                    .send(GuiCommands::InstalledApps(Err(
-                                        IdeviceError::UnexpectedResponse,
-                                    )))
-                                    .unwrap();
-                                continue 'main;
-                            }
-                        };
+                        } else {
+                            gui_sender
+                                .send(GuiCommands::InstalledApps(Err(
+                                    IdeviceError::UnexpectedResponse,
+                                )))
+                                .unwrap();
+                            continue 'main;
+                        }
                     }
                     gui_sender
                         .send(GuiCommands::InstalledApps(Ok(installed)))
@@ -443,18 +439,23 @@ fn main() {
                             gui_sender
                                 .send(GuiCommands::InstallPairingFile((name, Ok(()))))
                                 .unwrap();
-                            continue;
                         }
                         Err(e) => {
                             gui_sender
                                 .send(GuiCommands::InstallPairingFile((name, Err(e))))
                                 .unwrap();
-                            continue;
                         }
                     }
-                }                IdeviceCommands::DiscoveredDevice((ip, mac)) => {
+                }
+                IdeviceCommands::DiscoveredDevice((ip, mac)) => {
                     discovered_devices.insert(mac, ip);
-                },
+                }
+                // New command: when a device disconnects, forward event to the GUI.
+                IdeviceCommands::DeviceDisconnected(dev) => {
+                    // Extract a name for the disconnected device.
+                    let dev_name = dev.udid.clone();
+                    gui_sender.send(GuiCommands::DeviceDisconnected(dev_name)).unwrap();
+                }
                 IdeviceCommands::GetDeviceInfo(dev) => {
                     let p = dev.to_provider(UsbmuxdAddr::default(), "idevice_pair");
                     let mut lc = match LockdownClient::connect(&p).await {
@@ -513,6 +514,8 @@ enum GuiCommands {
     Validated(Result<(), IdeviceError>),
     InstalledApps(Result<HashMap<String, String>, IdeviceError>),
     InstallPairingFile((String, Result<(), IdeviceError>)), // name
+    // New variant for disconnection events, carrying the device's unique identifier or name.
+    DeviceDisconnected(String),
 }
 
 enum IdeviceCommands {
@@ -525,8 +528,10 @@ enum IdeviceCommands {
     GetDeviceInfo(UsbmuxdDevice),
     Validate((Option<IpAddr>, PairingFile)),
     InstalledApps((UsbmuxdDevice, Vec<String>)),
-    InstallPairingFile((UsbmuxdDevice, String, String, String, PairingFile)), // dev, name, b_id, install path, pf
-    DiscoveredDevice((IpAddr, String)),                                       // ip, mac
+    InstallPairingFile((UsbmuxdDevice, String, String, String, PairingFile)), // dev, name, bundle_id, install path, pairing_file
+    DiscoveredDevice((IpAddr, String)), // ip, mac
+    // New variant to represent that a device disconnected.
+    DeviceDisconnected(UsbmuxdDevice),
 }
 
 struct MyApp {
@@ -573,7 +578,8 @@ impl eframe::App for MyApp {
         }
 
         // Get updates from the idevice thread
-        match self.gui_recv.try_recv() {            Ok(msg) => match msg {
+        match self.gui_recv.try_recv() {
+            Ok(msg) => match msg {
                 GuiCommands::NoUsbmuxd(idevice_error) => {
                     let install_msg = if cfg!(windows) {
                         "Make sure you have iTunes installed from Apple's website, and that it's running."
@@ -631,6 +637,15 @@ impl eframe::App for MyApp {
                     if let Some(v) = self.install_res.get_mut(&name) {
                         *v = Some(res)
                     }
+                },
+                // Handle device disconnection events by removing the device from our collection.
+                GuiCommands::DeviceDisconnected(disconnected_dev) => {
+                    if let Some(devs) = self.devices.as_mut() {
+                        devs.remove(&disconnected_dev);
+                        if self.selected_device == disconnected_dev {
+                            self.selected_device.clear();
+                        }
+                    }
                 }
             },
             Err(e) => match e {
@@ -640,6 +655,7 @@ impl eframe::App for MyApp {
                 }
             },
         }
+
         if self.show_logs {
             egui::Window::new("logs")
                 .open(&mut self.show_logs)
@@ -648,7 +664,6 @@ impl eframe::App for MyApp {
                         .warn_color(Color32::BLACK) // the yellow is too bright in dark mode
                         .log_levels([true, true, true, true, false])
                         .enable_category("idevice".to_string(), true)
-                        // there should be a way to set default false...
                         .enable_category("mdns::mdns".to_string(), false)
                         .enable_category("eframe".to_string(), false)
                         .enable_category("eframe::native::glow_integration".to_string(), false)
@@ -715,7 +730,8 @@ impl eframe::App for MyApp {
                                                         .unwrap();
                                                     self.idevice_sender
                                                         .send(IdeviceCommands::GetDeviceInfo(dev_clone))
-                                                        .unwrap();self.pairing_file = None;
+                                                        .unwrap();
+                                                    self.pairing_file = None;
                                                     self.pairing_file_message = None;
                                                     self.pairing_file_string = None;
                                                     self.installed_apps = None;
