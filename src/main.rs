@@ -7,7 +7,7 @@ use std::{
     str::FromStr,
 };
 
-use egui::{Color32, ComboBox, RichText};
+use egui::{Color32, ComboBox, RichText, Card, Frame}; // Added Card and Frame
 use log::error;
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -566,6 +566,358 @@ struct MyApp {
     show_logs: bool,
 }
 
+impl MyApp {
+    /// Handles the UI for device selection, information display, and refresh.
+    fn device_selection_ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        match &self.devices {
+            Some(devs) => {
+                if devs.is_empty() {
+                    ui.label("No devices connected! Plug one in via USB.");
+                } else {
+                    // Wrap ComboBox and Device Info Card in a Frame
+                    egui::Frame::none().inner_margin(egui::Margin::same(10.0)).show(ui, |ui| {
+                        ui.vertical(|ui| { // Use vertical layout for the whole section
+                            ui.label("Choose a device");
+                            ComboBox::from_label("")
+                                .selected_text(&self.selected_device)
+                                .show_ui(ui, |ui| {
+                                    for (dev_name, dev) in devs {
+                                        if ui
+                                            .selectable_value(
+                                                &mut self.selected_device,
+                                                dev_name.clone(),
+                                                dev_name.clone(),
+                                            )
+                                            .clicked()
+                                        {
+                                            // Clear previous device specific info
+                                            self.wireless_enabled = None;
+                                            self.dev_mode_enabled = None;
+                                            self.ddi_mounted = None;
+                                            self.device_info = None;
+                                            self.pairing_file = None;
+                                            self.pairing_file_message = None;
+                                            self.pairing_file_string = None;
+                                            self.installed_apps = None;
+                                            // Clear all transient states related to pairing file actions
+                                            self.save_error = None;
+                                            self.validate_res = None;
+                                            self.validating = false;
+                                            self.install_res.clear();
+
+                                            // Send all device info requests
+                                            let dev_clone = dev.clone();
+                                            self.idevice_sender
+                                                .send(IdeviceCommands::GetDeviceInfo(dev_clone.clone()))
+                                                .unwrap();
+                                            self.idevice_sender
+                                                .send(IdeviceCommands::EnableWireless(dev_clone.clone()))
+                                                .unwrap();
+                                            self.idevice_sender
+                                                .send(IdeviceCommands::CheckDevMode(dev_clone.clone()))
+                                                .unwrap();
+                                            self.idevice_sender
+                                                .send(IdeviceCommands::AutoMount(dev_clone.clone()))
+                                                .unwrap();
+                                            self.idevice_sender.send(IdeviceCommands::InstalledApps((dev_clone.clone(), self.supported_apps.keys().map(|x| x.to_owned()).collect()))).unwrap();
+                                        };
+                                    }
+                                });
+
+                            // Show device info in a Card if available and a device is selected
+                            if !self.selected_device.is_empty() {
+                                if let Some(info) = &self.device_info {
+                                    ui.add_space(10.0); // Space between selector and card
+                                    egui::Card::new("Device Information")
+                                        .show(ui, |ui| {
+                                            ui.vertical(|ui| {
+                                                for (key, value) in info {
+                                                    ui.horizontal(|ui| {
+                                                        ui.label(RichText::new(format!("{}:", key)).strong());
+                                                        ui.label(value);
+                                                    });
+                                                }
+                                            });
+                                        });
+                                } else {
+                                    // Show a loading message for device info if a device is selected but info isn't loaded yet
+                                    ui.add_space(10.0);
+                                    ui.label("Loading device information...");
+                                }
+                            }
+                        });
+                    });
+                    ui.add_space(5.0); // Added space after the device selection/info frame
+                }
+                if ui.button("Refresh Devices").clicked() {
+                    self.idevice_sender
+                        .send(IdeviceCommands::GetDevices)
+                        .unwrap();
+                }
+                ui.add_space(5.0); // Added space after the "Refresh Devices" button
+            }
+            None => {
+                ui.label(&self.devices_placeholder);
+                // Potentially add a refresh button here too if usbmuxd connection failed initially
+                if ui.button("Retry Connection to Usbmuxd").clicked() {
+                    self.idevice_sender.send(IdeviceCommands::GetDevices).unwrap();
+                }
+            }
+        }
+    }
+
+    /// Displays the device status indicators (Wireless, Dev Mode, DDI).
+    fn device_status_ui(&mut self, ui: &mut egui::Ui) {
+        // Status indicators are shown below the card/device info area if a device is selected
+        if self.devices.as_ref().and_then(|x| x.get(&self.selected_device)).is_some() && !self.selected_device.is_empty() {
+            // ui.add_space(5.0);
+            ui.separator(); // Separator before status indicators
+
+            egui::Frame::none().inner_margin(egui::Margin::symmetric(10.0, 10.0)).show(ui, |ui| {
+                ui.vertical(|ui| {
+                    ui.heading("Device Status");
+                    ui.add_space(8.0); // Slightly more space after heading
+
+                    ui.horizontal(|ui| {
+                        ui.label("Wireless Debugging:");
+                        match &self.wireless_enabled {
+                            Some(Ok(_)) => ui.label(RichText::new("Enabled").color(Color32::GREEN)),
+                            Some(Err(e)) => ui.label(RichText::new(format!("Failed: {}", e.to_string())).color(Color32::RED)),
+                            None => ui.label(RichText::new("Loading...").color(Color32::from_rgb(255, 165, 0))), // Orange
+                        };
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Developer Mode:");
+                        match &self.dev_mode_enabled {
+                            Some(Ok(true)) => {
+                                ui.label(RichText::new("Enabled").color(Color32::GREEN))
+                            }
+                            Some(Ok(false)) => {
+                                ui.label(RichText::new("Disabled").color(Color32::RED)) // Consistent "Disabled"
+                            }
+                            Some(Err(e)) => ui.label(RichText::new(format!("Failed: {}", e.to_string())).color(Color32::RED)),
+                            None => ui.label(RichText::new("Loading...").color(Color32::from_rgb(255, 165, 0))), // Orange
+                        };
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Developer Disk Image (iOS 17+):");
+                        match &self.ddi_mounted {
+                            Some(Ok(_)) => {
+                                ui.label(RichText::new("Mounted").color(Color32::GREEN))
+                            }
+                            Some(Err(e)) => ui.label(RichText::new(format!("Failed: {}", e.to_string())).color(Color32::RED)),
+                            None => ui.label(RichText::new("Loading...").color(Color32::from_rgb(255, 165, 0))), // Orange
+                        };
+                    });
+                });
+            });
+        }
+    }
+
+    /// Handles all UI related to pairing file management.
+    fn pairing_file_management_ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context, dev: &UsbmuxdDevice) {
+        if !self.selected_device.is_empty() { // Ensure a device is selected (redundant check if dev is Some, but good practice)
+            ui.add_space(5.0); // Space before "Pairing File Management" heading if statuses were shown
+            ui.heading("Pairing File Management");
+            ui.add_space(8.0); // Increased space after this main heading
+
+            // --- Load and Generate Section ---
+            ui.label("Create or load a pairing file for your device:");
+            ui.horizontal(|ui| {
+                ui.vertical(|ui| {
+                    ui.label("Load the pairing file from the system.");
+                    if ui.button("Load Existing Pairing File").clicked() {
+                        self.pairing_file_message = Some("Loading...".to_string());
+                        self.pairing_file_string = None;
+                        self.save_error = None; // Clear previous errors
+                        self.validate_res = None; // Clear previous validation
+                        self.idevice_sender
+                            .send(IdeviceCommands::LoadPairingFile(dev.clone()))
+                            .unwrap();
+                    }
+                });
+                ui.separator();
+                ui.vertical(|ui| {
+                    ui.label("Generate a new pairing file. This may invalidate old ones.");
+                    if ui.button("Generate New Pairing File").clicked() {
+                        self.pairing_file_message = Some("Generating...".to_string());
+                        self.pairing_file_string = None;
+                        self.save_error = None;
+                        self.validate_res = None;
+                        self.idevice_sender
+                            .send(IdeviceCommands::GeneratePairingFile(dev.clone()))
+                            .unwrap();
+                    }
+                });
+            });
+
+            if let Some(msg) = &self.pairing_file_message {
+                ui.add_space(5.0);
+                if msg.contains("Loading...") || msg.contains("Generating...") {
+                    ui.label(RichText::new(msg).color(Color32::from_rgb(255, 165, 0))); // Orange
+                } else { // Likely an error message
+                    ui.label(RichText::new(msg).color(Color32::RED));
+                }
+            }
+            ui.add_space(5.0);
+
+            // --- Display Pairing File Content ---
+            if let Some(pf_string) = &self.pairing_file_string {
+                ui.add_space(5.0);
+                ui.label("Pairing File Content (Read-Only):");
+                let p_background_color = match ctx.style().visuals.dark_mode {
+                    true => Color32::from_gray(40),
+                    false => Color32::from_gray(230),
+                };
+                // Use a slightly larger margin for the pairing file display box
+                Frame::group(ui.style()).inner_margin(egui::Margin::same(6.0)).fill(p_background_color).show(ui, |ui| {
+                    egui::ScrollArea::both().max_height(150.0).show(ui, |ui| {
+                        ui.label(RichText::new(pf_string).monospace().small());
+                    });
+                });
+                ui.add_space(15.0); // Increased space before Advanced Actions
+
+                // --- Advanced Pairing File Actions (Collapsing Header) ---
+                egui::CollapsingHeader::new("Advanced Pairing File Actions")
+                    .default_open(true)
+                    .show(ui, |ui| {
+                        // --- Save to File Section ---
+                        Frame::group(ui.style()).inner_margin(egui::Margin::same(8.0)).show(ui, |ui| { // Consistent margin for sub-groups
+                            ui.heading("Save to File");
+                            ui.add_space(5.0); // Increased space after heading
+                            ui.label("Save this pairing file to your computer.");
+                            if ui.button("Save Pairing File...").clicked() {
+                                if let Some(p) = FileDialog::new()
+                                    .set_can_create_directories(true)
+                                    .set_title("Save Pairing File")
+                                    .set_file_name(format!("{}.plist", &dev.udid))
+                                    .save_file()
+                                {
+                                    self.save_error = None;
+                                    // Guard access to self.pairing_file
+                                    if let Some(pairing_file_to_use) = &self.pairing_file {
+                                        if let Err(e) = std::fs::write(
+                                            p,
+                                            pairing_file_to_use.serialize().unwrap(), // Assuming serialize itself can't fail or is critical
+                                        ) {
+                                            self.save_error = Some(e.to_string());
+                                        } else {
+                                            self.save_error = Some("File saved successfully!".to_string());
+                                        }
+                                    } else {
+                                        self.save_error = Some("Error: No pairing file loaded/generated to save.".to_string());
+                                    }
+                                }
+                            }
+                            if let Some(msg) = &self.save_error {
+                                ui.add_space(3.0);
+                                if msg.contains("successfully") {
+                                        ui.label(RichText::new(msg).color(Color32::GREEN));
+                                } else {
+                                        ui.label(RichText::new(msg).color(Color32::RED));
+                                }
+                            }
+                        });
+                        ui.add_space(10.0);
+
+                        // --- Validation Section ---
+                        Frame::group(ui.style()).inner_margin(egui::Margin::same(8.0)).show(ui, |ui| { // Consistent margin
+                            ui.heading("Validate Connection");
+                            ui.add_space(5.0); // Increased space after heading
+                            ui.label("Verify that this pairing file works over your local network (LAN).");
+                            ui.label("Your device will be searched for automatically, or you can enter its IP address.");
+                            ui.add(egui::TextEdit::singleline(&mut self.validation_ip_input).hint_text("Optional: Enter device IP..."));
+                            if ui.button("Validate over LAN").clicked() {
+                                // Guard access to self.pairing_file
+                                if let Some(pairing_file_to_use) = &self.pairing_file {
+                                    self.validating = true;
+                                    self.validate_res = None;
+                                    if self.validation_ip_input.is_empty() {
+                                        self.idevice_sender.send(IdeviceCommands::Validate((None, pairing_file_to_use.clone()))).unwrap();
+                                    } else {
+                                        match IpAddr::from_str(self.validation_ip_input.as_str()) {
+                                            Ok(i) => {
+                                                self.idevice_sender.send(IdeviceCommands::Validate((Some(i), pairing_file_to_use.clone()))).unwrap();
+                                            },
+                                            Err(_) => self.validate_res = Some(Err("Invalid IP address format.".to_string())),
+                                        };
+                                    }
+                                } else {
+                                     self.validate_res = Some(Err("No pairing file loaded to validate.".to_string()));
+                                }
+                            }
+                            if self.validating {
+                                ui.add_space(3.0);
+                                match &self.validate_res {
+                                    Some(Ok(_)) => ui.label(RichText::new("Validation Successful!").color(Color32::GREEN)),
+                                    Some(Err(e)) => ui.label(RichText::new(format!("Validation Failed: {}",e)).color(Color32::RED)),
+                                    None => ui.label(RichText::new("Validating...").color(Color32::from_rgb(255, 165, 0))), // Orange
+                                };
+                            }
+                        });
+                        ui.add_space(10.0);
+
+                        // --- Install to App Section ---
+                        Frame::group(ui.style()).inner_margin(egui::Margin::same(8.0)).show(ui, |ui| { // Consistent margin
+                            ui.heading("Install to Supported App");
+                            ui.add_space(5.0); // Increased space after heading
+                            match &self.installed_apps {
+                                Some(Ok(apps)) => {
+                                    if apps.is_empty() {
+                                        ui.label("No supported applications found on the device to install the pairing file to.");
+                                    } else {
+                                        ui.label("Automatically install the pairing file into a supported app on your device:");
+                                        ui.add_space(5.0);
+                                        for (name, bundle_id) in apps {
+                                            if self.supported_apps.contains_key(name) {
+                                                // Use a Card for each app for better visual separation
+                                                Card::new(name.as_str()).inner_margin(egui::Margin::same(6.0)).show(ui, |fui| {
+                                                    fui.horizontal(|fui| {
+                                                        fui.strong(name);
+                                                        fui.label(RichText::new(bundle_id).italics().weak());
+                                                    });
+                                                    fui.label(format!("Install pairing file to {}'s Documents directory.", name));
+                                                    if fui.button(format!("Install to {}", name)).clicked() {
+                                                        // Guard access to self.pairing_file
+                                                        if let Some(pairing_file_to_use) = &self.pairing_file {
+                                                            self.idevice_sender.send(IdeviceCommands::InstallPairingFile((dev.clone(), name.clone(), bundle_id.clone(), self.supported_apps.get(name).unwrap().to_owned(), pairing_file_to_use.clone()))).unwrap();
+                                                            self.install_res.insert(name.to_owned(), None);
+                                                        } else {
+                                                            // This case should ideally not be reached if button is only shown when pairing_file is Some
+                                                            // However, record an error for this app if it happens.
+                                                            // Use a more specific error or display strategy if this becomes common.
+                                                            let error_msg = "No pairing file loaded to install.".to_string();
+                                                            self.install_res.insert(name.clone(), Some(Err(IdeviceError::Other(error_msg))));
+                                                        }
+                                                    }
+                                                    if let Some(v) = self.install_res.get(name) {
+                                                        fui.add_space(3.0);
+                                                        match v {
+                                                            Some(Ok(_)) => fui.label(RichText::new("Successfully installed!").color(Color32::GREEN)),
+                                                            Some(Err(e)) => fui.label(RichText::new(format!("Installation Failed: {}", e.to_string())).color(Color32::RED)),
+                                                            None => fui.label(RichText::new("Installing...").color(Color32::from_rgb(255, 165, 0))), // Orange
+                                                        };
+                                                    }
+                                                });
+                                                ui.add_space(8.0); // Space between app cards
+                                            }
+                                        }
+                                    }
+                                }
+                                Some(Err(e)) => {
+                                    ui.label(RichText::new(format!("Failed to get installed apps: {}", e.to_string())).color(Color32::RED));
+                                }
+                                None => {
+                                    ui.label(RichText::new("Loading installed apps...").color(Color32::from_rgb(255, 165, 0))); // Orange
+                                }
+                            }
+                        });
+                    });
+            }
+        }
+    }
+}
+
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Get updates from the idevice thread
@@ -600,14 +952,18 @@ impl eframe::App for MyApp {
                 GuiCommands::MountRes(res) => {
                     self.ddi_mounted = Some(res);
                 }
-                GuiCommands::PairingFile(pairing_file) => match pairing_file {
+                GuiCommands::PairingFile(pairing_file_res) => match pairing_file_res { // Renamed for clarity
                     Ok(p) => {
                         self.pairing_file = Some(p.clone());
-                        self.pairing_file_message = None;
+                        self.pairing_file_message = None; // Clear any previous error/loading messages
                         self.pairing_file_string =
                             Some(String::from_utf8_lossy(&p.serialize().unwrap()).to_string())
                     }
-                    Err(e) => self.pairing_file_message = Some(e.to_string()),
+                    Err(e) => {
+                        self.pairing_file = None; // Ensure pairing_file is None on error
+                        self.pairing_file_string = None; // Ensure string is also None
+                        self.pairing_file_message = Some(e.to_string());
+                    }
                 },
                 GuiCommands::Validated(res) => match res {
                     Ok(()) => self.validate_res = Some(Ok(())),
@@ -663,253 +1019,26 @@ impl eframe::App for MyApp {
                         ui.toggle_value(&mut self.show_logs, "logs");
                     });
                 });
-                match &self.devices {
-                    Some(devs) => {
-                        if devs.is_empty() {
-                            ui.label("No devices connected! Plug one in via USB.");
-                        } else {
-                            ui.horizontal(|ui| {
-                                ui.vertical(|ui| {
-                                    ui.label("Choose a device");
-                                    ComboBox::from_label("")
-                                        .selected_text(&self.selected_device)
-                                        .show_ui(ui, |ui| {
-                                            for (dev_name, dev) in devs {
-                                                if ui
-                                                    .selectable_value(
-                                                        &mut self.selected_device,
-                                                        dev_name.clone(),
-                                                        dev_name.clone(),
-                                                    )
-                                                    .clicked()
-                                                {
-                                                    // Get device info immediately
-                                                    self.wireless_enabled = None;
-                                                    self.dev_mode_enabled = None;
-                                                    self.ddi_mounted = None;
-                                                    self.device_info = None;
+                ui.add_space(10.0); // Added space after the main header
 
-                                                    // Send all device info requests
-                                                    let dev_clone = dev.clone();
-                                                    self.idevice_sender
-                                                        .send(IdeviceCommands::EnableWireless(dev_clone.clone()))
-                                                        .unwrap();
-                                                    self.idevice_sender
-                                                        .send(IdeviceCommands::CheckDevMode(dev_clone.clone()))
-                                                        .unwrap();
-                                                    self.idevice_sender
-                                                        .send(IdeviceCommands::AutoMount(dev_clone.clone()))
-                                                        .unwrap();
-                                                    self.idevice_sender
-                                                        .send(IdeviceCommands::GetDeviceInfo(dev_clone))
-                                                        .unwrap();self.pairing_file = None;
-                                                    self.pairing_file_message = None;
-                                                    self.pairing_file_string = None;
-                                                    self.installed_apps = None;
-                                                    self.device_info = None;
-                                                    self.idevice_sender.send(IdeviceCommands::InstalledApps((dev.clone(), self.supported_apps.keys().map(|x| x.to_owned()).collect()))).unwrap();
-                                                    self.validating = false;
-                                                    self.validate_res = None;
-                                                };
-                                            }
-                                        });
-                                });
-                                
-                                ui.separator();
+                self.device_selection_ui(ui, ctx);
 
-                                // Show device info to the right if available
-                                if let Some(info) = &self.device_info {
-                                    ui.vertical(|ui| {
-                                        for (key, value) in info {
-                                            ui.horizontal(|ui| {
-                                                ui.label(format!("{}:", key));
-                                                ui.label(value);
-                                            });
-                                        }
-                                    });
-                                }
-                            });
-                        }
-                        if ui.button("Refresh...").clicked() {
-                            self.idevice_sender
-                                .send(IdeviceCommands::GetDevices)
-                                .unwrap();
-                        }
+                self.device_status_ui(ui);
 
-                    }
-                    None => {
-                        ui.label(&self.devices_placeholder);
-                    }
-                }
+                // Pairing File Management Section
+                // This section is only shown if a device is selected and its info is available.
+                let selected_usbmuxd_device = self.devices.as_ref()
+                    .and_then(|devs| devs.get(&self.selected_device))
+                    .cloned(); // Clone the device data to avoid lifetime issues if needed by helper, or pass ref.
+                               // For now, cloning is simpler if the helper needs to own it or send it.
+                               // If the helper only reads, a reference is fine. Let's pass a reference.
 
-                ui.separator();
-
-                if let Some(dev) = self
-                    .devices
-                    .as_ref()
-                    .and_then(|x| x.get(&self.selected_device))
-                {
-                    ui.horizontal(|ui| {
-                        ui.label("Wireless Debugging:");
-                        match &self.wireless_enabled {
-                            Some(Ok(_)) => ui.label(RichText::new("Enabled").color(Color32::GREEN)),
-                            Some(Err(e)) => ui
-                                .label(RichText::new(format!("Failed: {e:?}")).color(Color32::RED)),
-                            None => ui.label("Loading..."),
-                        };
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Developer Mode:");
-                        match &self.dev_mode_enabled {
-                            Some(Ok(true)) => {
-                                ui.label(RichText::new("Enabled").color(Color32::GREEN))
-                            }
-                            Some(Ok(false)) => {
-                                ui.label(RichText::new("Disabled!").color(Color32::RED))
-                            }
-                            Some(Err(e)) => ui
-                                .label(RichText::new(format!("Failed: {e:?}")).color(Color32::RED)),
-                            None => ui.label("Loading..."),
-                        };
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Developer Disk Image (iOS 17+):");
-                        match &self.ddi_mounted {
-                            Some(Ok(_)) => {
-                                ui.label(RichText::new("Mounted").color(Color32::GREEN))
-                            }
-                            Some(Err(e)) => ui
-                                .label(RichText::new(format!("Failed: {e:?}")).color(Color32::RED)),
-                            None => ui.label("Loading..."),
-                        };
-                    });
-
-                    // How to load a file
-                    ui.separator();
-                    ui.horizontal(|ui| {
-                        ui.vertical(|ui| {
-                            ui.heading("Load");
-                            ui.label("Load the pairing file from the system.");
-                            if ui.button("Load").clicked() {
-                                self.pairing_file_message = Some("Loading...".to_string());
-                                self.pairing_file_string = None;
-                                self.idevice_sender
-                                    .send(IdeviceCommands::LoadPairingFile(dev.clone()))
-                                    .unwrap();
-                            }
-                        });
+                if let Some(dev_ref) = self.devices.as_ref().and_then(|devs| devs.get(&self.selected_device)) {
+                     // Ensure there's a separator if a device is selected, before showing pairing options
+                    if !self.selected_device.is_empty() { // Redundant with dev_ref but good for clarity
                         ui.separator();
-                        ui.vertical(|ui| {
-                            ui.heading("Generate");
-                            ui.label("Generate a new pairing file. This may invalidate old ones.");
-                            if ui.button("Generate").clicked() {
-                                self.pairing_file_message = Some("Loading...".to_string());
-                                self.pairing_file_string = None;
-                                self.idevice_sender
-                                    .send(IdeviceCommands::GeneratePairingFile(dev.clone()))
-                                    .unwrap();
-                            }
-                        });
-                    });
-                    if let Some(msg) = &self.pairing_file_message {
-                        ui.label(msg);
                     }
-
-                    ui.separator();
-
-                    if let Some(pairing_file) = &self.pairing_file_string {
-                        egui::Grid::new("reee").min_col_width(200.0).show(ui, |ui| {
-                            ui.vertical(|ui| {
-                                ui.heading("Save to File");
-                                if let Some(msg) = &self.save_error {
-                                    ui.label(RichText::new(msg).color(Color32::RED));
-                                }
-                                ui.label("Save this file to your computer, and then transfer it to your device manually.");
-                                if ui.button("Save to File").clicked() {
-                                    if let Some(p) = FileDialog::new()
-                                        .set_can_create_directories(true)
-                                        .set_title("Save Pairing File")
-                                        .set_file_name(format!("{}.plist", &dev.udid))
-                                        .save_file()
-                                    {
-                                        self.save_error = None;
-                                        if let Err(e) = std::fs::write(
-                                            p,
-                                            self.pairing_file
-                                                .as_ref()
-                                                .unwrap()
-                                                .clone()
-                                                .serialize()
-                                                .unwrap(),
-                                        ) {
-                                            self.save_error = Some(e.to_string());
-                                        }
-                                    }
-                                }
-
-                                ui.separator();
-                                ui.heading("Validation");
-                                ui.label("Verify that your pairing file works over LAN. Your device will be searched for over your network.");
-                                ui.add(egui::TextEdit::singleline(&mut self.validation_ip_input).hint_text("OR enter your device's IP..."));
-                                if ui.button("Validate").clicked() {
-                                    self.validating = true;
-                                    self.validate_res = None;
-                                    if self.validation_ip_input.is_empty() {
-                                        self.idevice_sender.send(IdeviceCommands::Validate((None, self.pairing_file.clone().unwrap()))).unwrap()
-                                    } else {
-                                        match IpAddr::from_str(self.validation_ip_input.as_str()) {
-                                            Ok(i) => {
-                                                self.idevice_sender.send(IdeviceCommands::Validate((Some(i), self.pairing_file.clone().unwrap()))).unwrap()
-                                            },
-                                            Err(_) => self.validate_res = Some(Err("Invalid IP".to_string()))
-                                        };
-                                    }
-                                }
-                                if self.validating {
-                                    match &self.validate_res {
-                                        Some(Ok(_)) => ui.label(RichText::new("Success").color(Color32::GREEN)),
-                                        Some(Err(e)) =>ui.label(RichText::new(e).color(Color32::RED)),
-                                        None => ui.label("Loading..."),
-                                    };
-                                }
-
-                                match &self.installed_apps {
-                                    Some(Ok(apps)) => {
-                                        for (name, bundle_id) in apps {
-                                            ui.separator();
-                                            ui.heading(name);
-                                            ui.label(RichText::new(bundle_id).italics().weak());
-                                            ui.label(format!("{name} is installed on your device. You can automatically install the pairing file into the app."));
-                                            if ui.button("Install").clicked() {
-                                                self.idevice_sender.send(IdeviceCommands::InstallPairingFile((dev.clone(), name.clone(), bundle_id.clone(), self.supported_apps.get(name).unwrap().to_owned(), self.pairing_file.clone().unwrap()))).unwrap();
-                                                self.install_res.insert(name.to_owned(), None);
-                                            }
-                                            if let Some(v) = self.install_res.get(name) {
-                                                match v {
-                                                    Some(Ok(_)) => ui.label(RichText::new("Success").color(Color32::GREEN)),
-                                                    Some(Err(e)) => ui.label(RichText::new(e.to_string()).color(Color32::RED)),
-                                                    None => ui.label("Installing..."),
-                                                };
-                                            }
-                                        }
-                                    }
-                                    Some(Err(e)) => {
-                                        ui.label(RichText::new(format!("Failed getting installed apps: {:?}", e.to_string())).color(Color32::RED));
-                                    }
-                                    None => {
-                                        ui.label("Getting installed apps...");
-                                    }
-                                }
-                            });
-                            let p_background_color = match ctx.theme() {
-                                egui::Theme::Dark => Color32::BLACK,
-                                egui::Theme::Light => Color32::LIGHT_GRAY,
-                            };
-                            egui::frame::Frame::new().corner_radius(10).inner_margin(10).fill(p_background_color).show(ui, |ui| {
-                                ui.label(RichText::new(pairing_file).monospace());
-                            });
-                        });
-                    }
+                    self.pairing_file_management_ui(ui, ctx, dev_ref);
                 }
             });
         });
