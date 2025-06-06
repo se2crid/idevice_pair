@@ -7,7 +7,7 @@ use std::{
     str::FromStr,
 };
 
-use egui::{Color32, ComboBox, RichText, Card, Frame}; // Added Card and Frame
+use egui::{Color32, ComboBox, RichText, Frame}; // Card removed, Frame kept
 use log::error;
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -568,14 +568,14 @@ struct MyApp {
 
 impl MyApp {
     /// Handles the UI for device selection, information display, and refresh.
-    fn device_selection_ui(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+    fn device_selection_ui(&mut self, ui: &mut egui::Ui, _ctx: &egui::Context) { // ctx changed to _ctx
         match &self.devices {
             Some(devs) => {
                 if devs.is_empty() {
                     ui.label("No devices connected! Plug one in via USB.");
                 } else {
                     // Wrap ComboBox and Device Info Card in a Frame
-                    egui::Frame::none().inner_margin(egui::Margin::same(10.0)).show(ui, |ui| {
+                    egui::Frame::new().inner_margin(egui::Margin::same(10)).show(ui, |ui| { // 10.0 to 10
                         ui.vertical(|ui| { // Use vertical layout for the whole section
                             ui.label("Choose a device");
                             ComboBox::from_label("")
@@ -624,14 +624,16 @@ impl MyApp {
                                     }
                                 });
 
-                            // Show device info in a Card if available and a device is selected
+                            // Show device info in a Frame::group if available and a device is selected
                             if !self.selected_device.is_empty() {
                                 if let Some(info) = &self.device_info {
                                     ui.add_space(10.0); // Space between selector and card
-                                    egui::Card::new("Device Information")
-                                        .show(ui, |ui| {
-                                            ui.vertical(|ui| {
-                                                for (key, value) in info {
+                                    // Replaced Card with Frame::group
+                                    Frame::group(ui.style()).show(ui, |ui| {
+                                        ui.label(RichText::new("Device Information").strong()); // Add a label for the group title
+                                        ui.add_space(4.0);
+                                        ui.vertical(|ui| {
+                                            for (key, value) in info {
                                                     ui.horizontal(|ui| {
                                                         ui.label(RichText::new(format!("{}:", key)).strong());
                                                         ui.label(value);
@@ -673,7 +675,7 @@ impl MyApp {
             // ui.add_space(5.0);
             ui.separator(); // Separator before status indicators
 
-            egui::Frame::none().inner_margin(egui::Margin::symmetric(10.0, 10.0)).show(ui, |ui| {
+            egui::Frame::new().inner_margin(egui::Margin::symmetric(10, 10)).show(ui, |ui| { // 10.0, 10.0 to 10, 10
                 ui.vertical(|ui| {
                     ui.heading("Device Status");
                     ui.add_space(8.0); // Slightly more space after heading
@@ -770,7 +772,7 @@ impl MyApp {
                     false => Color32::from_gray(230),
                 };
                 // Use a slightly larger margin for the pairing file display box
-                Frame::group(ui.style()).inner_margin(egui::Margin::same(6.0)).fill(p_background_color).show(ui, |ui| {
+                Frame::group(ui.style()).inner_margin(egui::Margin::same(6)).fill(p_background_color).show(ui, |ui| { // 6.0 to 6 already done, confirm
                     egui::ScrollArea::both().max_height(150.0).show(ui, |ui| {
                         ui.label(RichText::new(pf_string).monospace().small());
                     });
@@ -782,7 +784,7 @@ impl MyApp {
                     .default_open(true)
                     .show(ui, |ui| {
                         // --- Save to File Section ---
-                        Frame::group(ui.style()).inner_margin(egui::Margin::same(8.0)).show(ui, |ui| { // Consistent margin for sub-groups
+                        Frame::group(ui.style()).inner_margin(egui::Margin::same(8)).show(ui, |ui| {  // 8.0 to 8 already done, confirm
                             ui.heading("Save to File");
                             ui.add_space(5.0); // Increased space after heading
                             ui.label("Save this pairing file to your computer.");
@@ -794,15 +796,20 @@ impl MyApp {
                                     .save_file()
                                 {
                                     self.save_error = None;
-                                    // Guard access to self.pairing_file
                                     if let Some(pairing_file_to_use) = &self.pairing_file {
-                                        if let Err(e) = std::fs::write(
-                                            p,
-                                            pairing_file_to_use.serialize().unwrap(), // Assuming serialize itself can't fail or is critical
-                                        ) {
-                                            self.save_error = Some(e.to_string());
-                                        } else {
-                                            self.save_error = Some("File saved successfully!".to_string());
+                                        // The serialize().unwrap() here assumes that if PairingFile exists, it's always serializable.
+                                        // This is generally true for plist data unless it's corrupt in a way not caught by parsing.
+                                        match pairing_file_to_use.serialize() {
+                                            Ok(serialized_data) => {
+                                                if let Err(e) = std::fs::write(p, serialized_data) {
+                                                    self.save_error = Some(format!("Failed to write file: {}", e));
+                                                } else {
+                                                    self.save_error = Some("File saved successfully!".to_string());
+                                                }
+                                            }
+                                            Err(e) => {
+                                                 self.save_error = Some(format!("Failed to serialize pairing data: {}", e));
+                                            }
                                         }
                                     } else {
                                         self.save_error = Some("Error: No pairing file loaded/generated to save.".to_string());
@@ -821,7 +828,7 @@ impl MyApp {
                         ui.add_space(10.0);
 
                         // --- Validation Section ---
-                        Frame::group(ui.style()).inner_margin(egui::Margin::same(8.0)).show(ui, |ui| { // Consistent margin
+                        Frame::group(ui.style()).inner_margin(egui::Margin::same(8)).show(ui, |ui| {  // 8.0 to 8 already done, confirm
                             ui.heading("Validate Connection");
                             ui.add_space(5.0); // Increased space after heading
                             ui.label("Verify that this pairing file works over your local network (LAN).");
@@ -858,7 +865,7 @@ impl MyApp {
                         ui.add_space(10.0);
 
                         // --- Install to App Section ---
-                        Frame::group(ui.style()).inner_margin(egui::Margin::same(8.0)).show(ui, |ui| { // Consistent margin
+                        Frame::group(ui.style()).inner_margin(egui::Margin::same(8)).show(ui, |ui| {  // 8.0 to 8 already done, confirm
                             ui.heading("Install to Supported App");
                             ui.add_space(5.0); // Increased space after heading
                             match &self.installed_apps {
@@ -870,24 +877,21 @@ impl MyApp {
                                         ui.add_space(5.0);
                                         for (name, bundle_id) in apps {
                                             if self.supported_apps.contains_key(name) {
-                                                // Use a Card for each app for better visual separation
-                                                Card::new(name.as_str()).inner_margin(egui::Margin::same(6.0)).show(ui, |fui| {
+                                                // Use a Frame::group for each app for better visual separation
+                                                Frame::group(ui.style()).inner_margin(egui::Margin::same(6)).show(ui, |fui| { // 6.0 to 6 already done, confirm
                                                     fui.horizontal(|fui| {
                                                         fui.strong(name);
                                                         fui.label(RichText::new(bundle_id).italics().weak());
                                                     });
                                                     fui.label(format!("Install pairing file to {}'s Documents directory.", name));
                                                     if fui.button(format!("Install to {}", name)).clicked() {
-                                                        // Guard access to self.pairing_file
                                                         if let Some(pairing_file_to_use) = &self.pairing_file {
                                                             self.idevice_sender.send(IdeviceCommands::InstallPairingFile((dev.clone(), name.clone(), bundle_id.clone(), self.supported_apps.get(name).unwrap().to_owned(), pairing_file_to_use.clone()))).unwrap();
                                                             self.install_res.insert(name.to_owned(), None);
                                                         } else {
-                                                            // This case should ideally not be reached if button is only shown when pairing_file is Some
-                                                            // However, record an error for this app if it happens.
-                                                            // Use a more specific error or display strategy if this becomes common.
-                                                            let error_msg = "No pairing file loaded to install.".to_string();
-                                                            self.install_res.insert(name.clone(), Some(Err(IdeviceError::Other(error_msg))));
+                                                            // let error_msg = "No pairing file loaded to install.".to_string(); // This message will be lost
+                                                            // Use IdeviceError::UnknownErrorType as suggested by the compiler.
+                                                            self.install_res.insert(name.clone(), Some(Err(IdeviceError::UnknownErrorType)));
                                                         }
                                                     }
                                                     if let Some(v) = self.install_res.get(name) {
@@ -952,16 +956,26 @@ impl eframe::App for MyApp {
                 GuiCommands::MountRes(res) => {
                     self.ddi_mounted = Some(res);
                 }
-                GuiCommands::PairingFile(pairing_file_res) => match pairing_file_res { // Renamed for clarity
-                    Ok(p) => {
-                        self.pairing_file = Some(p.clone());
-                        self.pairing_file_message = None; // Clear any previous error/loading messages
-                        self.pairing_file_string =
-                            Some(String::from_utf8_lossy(&p.serialize().unwrap()).to_string())
+                GuiCommands::PairingFile(pairing_file_res) => match pairing_file_res {
+                    Ok(p) => { // p is PairingFile
+                        // Serialize a clone of p, so original p can be moved into self.pairing_file
+                        match p.clone().serialize() {
+                            Ok(serialized_data) => {
+                                self.pairing_file = Some(p); // Move original p here
+                                self.pairing_file_string = Some(String::from_utf8_lossy(&serialized_data).to_string());
+                                self.pairing_file_message = None; // Clear error/loading messages
+                            }
+                            Err(e) => {
+                                self.pairing_file = None;
+                                self.pairing_file_string = None;
+                                // Use the more specific error message that was already there for serialization errors
+                                self.pairing_file_message = Some(format!("Failed to process pairing file (serialization error): {}", e));
+                            }
+                        }
                     }
                     Err(e) => {
-                        self.pairing_file = None; // Ensure pairing_file is None on error
-                        self.pairing_file_string = None; // Ensure string is also None
+                        self.pairing_file = None;
+                        self.pairing_file_string = None;
                         self.pairing_file_message = Some(e.to_string());
                     }
                 },
@@ -1027,18 +1041,15 @@ impl eframe::App for MyApp {
 
                 // Pairing File Management Section
                 // This section is only shown if a device is selected and its info is available.
-                let selected_usbmuxd_device = self.devices.as_ref()
-                    .and_then(|devs| devs.get(&self.selected_device))
-                    .cloned(); // Clone the device data to avoid lifetime issues if needed by helper, or pass ref.
-                               // For now, cloning is simpler if the helper needs to own it or send it.
-                               // If the helper only reads, a reference is fine. Let's pass a reference.
-
-                if let Some(dev_ref) = self.devices.as_ref().and_then(|devs| devs.get(&self.selected_device)) {
+                if let Some(dev_ref_original) = self.devices.as_ref().and_then(|devs| devs.get(&self.selected_device)) {
                      // Ensure there's a separator if a device is selected, before showing pairing options
-                    if !self.selected_device.is_empty() { // Redundant with dev_ref but good for clarity
+                    if !self.selected_device.is_empty() { // Good for clarity, though dev_ref_original implies it.
                         ui.separator();
                     }
-                    self.pairing_file_management_ui(ui, ctx, dev_ref);
+                    // Clone the device data to pass to the method, avoiding conflicting borrows with &mut self.
+                    // This assumes UsbmuxdDevice implements Clone.
+                    let dev_clone = dev_ref_original.clone();
+                    self.pairing_file_management_ui(ui, ctx, &dev_clone);
                 }
             });
         });
