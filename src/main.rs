@@ -889,9 +889,9 @@ impl MyApp {
                                                             self.idevice_sender.send(IdeviceCommands::InstallPairingFile((dev.clone(), name.clone(), bundle_id.clone(), self.supported_apps.get(name).unwrap().to_owned(), pairing_file_to_use.clone()))).unwrap();
                                                             self.install_res.insert(name.to_owned(), None);
                                                         } else {
-                                                            // let error_msg = "No pairing file loaded to install.".to_string(); // This message will be lost
-                                                            // Use IdeviceError::UnknownErrorType as suggested by the compiler.
-                                                            self.install_res.insert(name.clone(), Some(Err(IdeviceError::UnknownErrorType)));
+                                                            let error_msg = "No pairing file loaded to install.".to_string();
+                                                            // Use IdeviceError::UnknownErrorType as suggested by the compiler, now with the message.
+                                                            self.install_res.insert(name.clone(), Some(Err(IdeviceError::UnknownErrorType(error_msg))));
                                                         }
                                                     }
                                                     if let Some(v) = self.install_res.get(name) {
