@@ -2221,9 +2221,9 @@ dependencies = [
 
 [[package]]
 name = "idevice"
-version = "0.1.33"
+version = "0.1.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d6db305c93bbb33627049e968f3756190b84b7c7c6e65eb5b1d04feeaf24650"
+checksum = "2ea3cd76e0b220669d169436448b1ffd777a82802ceb58e3a9efe6e30134e989"
 dependencies = [
  "base64",
  "chrono",
@@ -3557,7 +3557,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
