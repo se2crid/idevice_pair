@@ -244,27 +244,38 @@ jobs:
           path: dist/${{ env.APP_NAME }}-${{ env.VERSION }}-macos-universal.dmg
 
 
-  # Windows build
+  # Windows builds
   build-windows:
-    name: Build Windows x64
-    runs-on: windows-latest
+    name: Build Windows ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            suffix: x86_64
+          - arch: ARM64
+            runner: windows-latest
+            target: aarch64-pc-windows-msvc
+            suffix: aarch64
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set up Rust
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           components: rustfmt, clippy
-          target: x86_64-pc-windows-msvc
+          target: ${{ matrix.target }}
       - name: Build and Rename Executable
         shell: bash
         run: |
-          cargo build --release --bin ${{ env.BINARY_NAME }} --target x86_64-pc-windows-msvc
+          cargo build --release --bin ${{ env.BINARY_NAME }} --target ${{ matrix.target }}
           mkdir -p release
-          cp target/x86_64-pc-windows-msvc/release/${{ env.BINARY_NAME }}.exe \
-             release/${{ env.APP_NAME }}-${{ env.VERSION }}-windows-x86_64.exe
+          cp target/${{ matrix.target }}/release/${{ env.BINARY_NAME }}.exe \
+             release/${{ env.APP_NAME }}-${{ env.VERSION }}-windows-${{ matrix.suffix }}.exe
       - name: Upload Windows .exe
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.APP_NAME }}-${{ env.VERSION }}-windows-x86_64.exe
-          path: release/${{ env.APP_NAME }}-${{ env.VERSION }}-windows-x86_64.exe
+          name: ${{ env.APP_NAME }}-${{ env.VERSION }}-windows-${{ matrix.suffix }}.exe
+          path: release/${{ env.APP_NAME }}-${{ env.VERSION }}-windows-${{ matrix.suffix }}.exe
