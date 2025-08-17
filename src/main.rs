@@ -117,7 +117,7 @@ fn main() {
                                         continue;
                                     }
                                 };
-                                let values = match lc.get_all_values().await {
+                                let values = match lc.get_value(None, None).await {
                                     Ok(v) => v,
                                     Err(e) => {
                                         error!("Failed to get lockdown values: {e:?}");
@@ -126,8 +126,8 @@ fn main() {
                                 };
 
                                 // Get device name for selection
-                                let device_name = match values.get("DeviceName") {
-                                    Some(plist::Value::String(n)) => n.clone(),
+                                let device_name = match values.as_dictionary().and_then(|x|x.get("DeviceName")).and_then(|x|x.as_string()) {
+                                    Some(n) => n.to_string(),
                                     _ => {
                                         continue;
                                     }
@@ -185,7 +185,7 @@ fn main() {
                         .set_value(
                             "EnableWifiDebugging",
                             true.into(),
-                            Some("com.apple.mobile.wireless_lockdown".into()),
+                            Some("com.apple.mobile.wireless_lockdown"),
                         )
                         .await
                     {
@@ -230,8 +230,8 @@ fn main() {
 
                     let v = match lc
                         .get_value(
-                            "DeveloperModeStatus",
-                            Some("com.apple.security.mac.amfi".to_string()),
+                            Some("DeveloperModeStatus"),
+                            Some("com.apple.security.mac.amfi"),
                         )
                         .await
                     {
@@ -373,7 +373,7 @@ fn main() {
                             continue;
                         }
                     };
-                    let installed_apps = match ic.get_apps(Some("User".to_string()), None).await {
+                    let installed_apps = match ic.get_apps(Some("User"), None).await {
                         Ok(a) => a,
                         Err(e) => {
                             gui_sender.send(GuiCommands::InstalledApps(Err(e))).unwrap();
@@ -471,10 +471,18 @@ fn main() {
                         }
                     };
                     
-                    let values = match lc.get_all_values().await {
+                    let values = match lc.get_value(None, None).await {
                         Ok(v) => v,
                         Err(e) => {
                             error!("Failed to get lockdown values: {e:?}");
+                            continue;
+                        }
+                    };
+
+                    let values = match values.as_dictionary() {
+                        Some(v) => v,
+                        None => {
+                            error!("Values was not a dictionary");
                             continue;
                         }
                     };
@@ -830,8 +838,8 @@ impl eframe::App for MyApp {
                                     ui.label(RichText::new(msg).color(Color32::RED));
                                 }
                                 ui.label("Save this file to your computer, and then transfer it to your device manually.");
-                                if ui.button("Save to File").clicked() {
-                                    if let Some(p) = FileDialog::new()
+                                if ui.button("Save to File").clicked()
+                                    && let Some(p) = FileDialog::new()
                                         .set_can_create_directories(true)
                                         .set_title("Save Pairing File")
                                         .set_file_name(format!("{}.plist", &dev.udid))
@@ -849,7 +857,7 @@ impl eframe::App for MyApp {
                                         ) {
                                             self.save_error = Some(e.to_string());
                                         }
-                                    }
+                                    
                                 }
 
                                 ui.separator();

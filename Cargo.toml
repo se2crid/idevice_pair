@@ -13,9 +13,9 @@ idevice = { version = "0.1.35", features = [
   "mobile_image_mounter",
   "tss",
 ] }
-egui = { version = "0.31" }
-egui_logger = { version = "0.7" }
-eframe = { version = "0.31" }
+egui = { version = "0.32" }
+egui_logger = { version = "0.8" }
+eframe = { version = "0.32" }
 rfd = { version = "0.15", features = ["gtk3"], default-features = false }
 tokio = { version = "1.45", features = ["full"] }
 plist = { version = "1.7" }

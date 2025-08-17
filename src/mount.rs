@@ -21,7 +21,7 @@ pub async fn auto_mount(dev: UsbmuxdDevice) -> Result<(), IdeviceError> {
 
     let mut lc = LockdownClient::connect(&p).await?;
     let ucid = lc
-        .get_value("UniqueChipID", None)
+        .get_value(Some("UniqueChipID"), None)
         .await?
         .as_unsigned_integer()
         .unwrap();
