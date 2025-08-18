@@ -1,4 +1,4 @@
-# idevice-pair
+# idevice_pair
 
 A tiny cross-platform GUI (egui/eframe) for working with iOS pairing files and developer settings—built on top of the [`idevice`](https://crates.io/crates/idevice) Rust crate.
 
