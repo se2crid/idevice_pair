@@ -2227,9 +2227,9 @@ dependencies = [
 
 [[package]]
 name = "idevice"
-version = "0.1.38"
+version = "0.1.39"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f87e3922ef3c6a0207f0bca2a137edeec5d93ac59945033e9836a7ecb4e188d9"
+checksum = "ba0b622e87f6d44f62d976219e2581f9dce0f554f070c48ba44419bcdc3ee2fb"
 dependencies = [
  "base64",
  "chrono",
