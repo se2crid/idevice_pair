@@ -71,6 +71,12 @@ fn main() {
 
     let mut options = eframe::NativeOptions::default();
 
+    // Prefer GL only on macOS Intel
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    {
+        options.renderer = eframe::Renderer::Glow;
+    }
+
     #[cfg(target_os = "macos")]
     let icon_bytes: &[u8] = include_bytes!("../icon.png");
 
