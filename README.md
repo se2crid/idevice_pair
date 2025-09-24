@@ -56,9 +56,9 @@ A cross-platform GUI application for managing iOS device pairing and wireless de
 
 The application can generate and manage pairing files for various sideloading applications:
 
-1. **Load existing pairing file**: Click "Load" to import from your device
-2. **Generate new pairing file**: Click "Generate" to create a fresh pairing
-3. **Save pairing file**: Export the pairing file for use with supported applications
+1. **Load existing pairing file**: Click `Load` to import from your computer (recommended)
+2. **Generate new pairing file**: Click `Generate` to create a fresh pairing
+3. **Save pairing file**: Export the pairing file to your computer or your supported applications
 4. **Validate pairing**: Test the pairing file against a network-connected device
 
 ## Pairing Guide
@@ -68,7 +68,7 @@ The application can generate and manage pairing files for various sideloading ap
 Before creating a pairing file, ensure you have:
 
 1. **Set a passcode** on your iOS device
-2. **Sideloaded an app** with the get-task-allow entitlement (can be done with [SideStore](https://sidestore.io/) or similar tools)
+2. **Sideloaded an app** with the get-task-allow entitlement (can be done with [SideStore](https://sidestore.io/), a Development Certificate + signer, or similar tools)
 3. **Enabled Developer Mode** on your iOS/iPadOS device (found in Settings → Privacy & Security after sideloading an app)
 
 ### Installation Instructions
@@ -77,7 +77,7 @@ Before creating a pairing file, ensure you have:
 1. Download [idevice_pair for macOS](https://github.com/jkcoxson/idevice_pair/releases/latest/download/idevice_pair--macos-universal.dmg)
 2. Open the Disk Image and drag `idevice_pair` to `Applications`
 
-#### Windows (64-bit)
+#### Windows
 1. Install [iTunes](https://apple.com/itunes/download/win64) from Apple's website
 2. Download [idevice_pair for Windows](https://github.com/jkcoxson/idevice_pair/releases/latest/download/idevice_pair--windows-x86_64.exe) and save it to a memorable location
 
@@ -111,8 +111,8 @@ The tool includes built-in support for pairing file formats used by:
 
 - **SideStore**: `ALTPairingFile.mobiledevicepairing`
 - **LiveContainer+SideStore**: `SideStore/Documents/ALTPairingFile.mobiledevicepairing`
-- **Feather**: `pairingFile.plist`
 - **StikDebug**: `pairingFile.plist`
+- **Feather**: `pairingFile.plist`
 - **Protokolle**: `pairingFile.plist`
 - **Antrag**: `pairingFile.plist`
 
@@ -135,15 +135,15 @@ For a complete list of dependencies, see [`Cargo.toml`](Cargo.toml).
 - Check that the device is trusted on your computer
 - Try disconnecting and reconnecting the device
 
+### Pairing File Issues
+- Make sure developer mode is enabled on your iOS device
+- Verify the pairing file format matches your target application (.plist or .mobiledevicepairing)
+- Try creating a fresh pairing file using the `load` button if it doesn't function as expected
+  
 ### Wireless Connection Issues
 - Verify both devices are on the same network
 - Ensure wireless debugging is enabled on the iOS device
 - Check firewall settings that might block port 62078
-
-### Pairing File Issues
-- Make sure developer mode is enabled on your iOS device
-- Verify the pairing file format matches your target application
-- Try generating a fresh pairing file if validation fails
 
 ## Contributing
 
