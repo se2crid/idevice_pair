@@ -1,4 +1,4 @@
-# iDevice Pair
+# idevice_pair
 
 A cross-platform GUI application for managing iOS device pairing and wireless debugging. This tool provides an easy-to-use interface for enabling wireless debugging, managing pairing files, and working with various iOS sideloading applications.
 
@@ -10,9 +10,9 @@ A cross-platform GUI application for managing iOS device pairing and wireless de
 - **Pairing Files**: Generate, load, and validate device pairing files
 - **App Integration**: Support for popular sideloading apps including:
   - SideStore
-  - LiveContainer
-  - Feather
+  - LiveContainer+SideStore
   - StikDebug
+  - Feather
   - Protokolle
   - Antrag
 - **Network Discovery**: Discover devices on the local network
@@ -21,7 +21,7 @@ A cross-platform GUI application for managing iOS device pairing and wireless de
 ## Prerequisites
 
 - **macOS/Linux/Windows**: Cross-platform support
-- **iOS Device**: Connected via USB or on the same network
+- **iOS Device**: Must have a passcode set, Developer Mode enabled, and connected via USB
 - **Developer Mode**: Must be enabled on the iOS device for full functionality
 - **Rust**: Required for building from source
 
@@ -56,39 +56,37 @@ A cross-platform GUI application for managing iOS device pairing and wireless de
 
 The application can generate and manage pairing files for various sideloading applications:
 
-1. **Load existing pairing file**: Click "Load Pairing File" to import from your device
-2. **Generate new pairing file**: Click "Generate Pairing File" to create a fresh pairing
-3. **Save pairing file**: Export the pairing file for use with supported applications
+1. **Load existing pairing file**: Click `Load` to import from your computer (recommended)
+2. **Generate new pairing file**: Click `Generate` to create a fresh pairing
+3. **Save pairing file**: Export the pairing file to your computer or your supported applications
 4. **Validate pairing**: Test the pairing file against a network-connected device
 
 ## Pairing Guide
-
-idevice_pair allows you to create a pairing file for programs like StikDebug to communicate with your device remotely. This pairing file is device-specific and required for tools like StikDebug to function correctly.
 
 ### Prerequisites for Pairing
 
 Before creating a pairing file, ensure you have:
 
 1. **Set a passcode** on your iOS device
-2. **Sideloaded an app** with the get-task-allow entitlement (can be done with [SideStore](https://sidestore.io/) or similar tools)
+2. **Sideloaded an app** with the get-task-allow entitlement (can be done with [SideStore](https://sidestore.io/), a Development Certificate + signer, or similar tools)
 3. **Enabled Developer Mode** on your iOS/iPadOS device (found in Settings → Privacy & Security after sideloading an app)
 
 ### Installation Instructions
 
 #### macOS
-1. Download [idevice pair for macOS](https://github.com/jkcoxson/idevice_pair/releases/latest/download/idevice_pair--macos-universal.dmg)
-2. Open the Disk Image and drag `idevice pair` to `Applications`
+1. Download [idevice_pair for macOS](https://github.com/jkcoxson/idevice_pair/releases/latest/download/idevice_pair--macos-universal.dmg)
+2. Open the Disk Image and drag `idevice_pair` to `Applications`
 
 #### Windows
-1. Install iTunes ([64-bit](https://apple.com/itunes/download/win64) or [32-bit](https://apple.com/itunes/download/win32)) from Apple's website
-2. Download [idevice pair for Windows](https://github.com/jkcoxson/idevice_pair/releases/latest/download/idevice_pair--windows-x86_64.exe) and save it to a memorable location
+1. Install [iTunes](https://apple.com/itunes/download/win64) from Apple's website
+2. Download [idevice_pair for Windows](https://github.com/jkcoxson/idevice_pair/releases/latest/download/idevice_pair--windows-x86_64.exe) and save it to a memorable location
 
 #### Linux
 1. Install usbmuxd: 
    ```bash
    sudo apt install -y usbmuxd
    ```
-2. Download idevice_pair for your architecture:
+2. Download idevice_pair for your architecture and save it to a memorable location:
    - [x86_64](https://github.com/jkcoxson/idevice_pair/releases/latest/download/idevice_pair--linux-x86_64.AppImage)
    - [AArch64](https://github.com/jkcoxson/idevice_pair/releases/latest/download/idevice_pair--linux-aarch64.AppImage)
 3. Make the downloaded file executable
@@ -97,10 +95,10 @@ Before creating a pairing file, ensure you have:
 
 1. **Connect your device** to your computer via USB cable
    - If prompted, select `Trust` and enter your passcode
-2. **Open idevice pair** and select your device from the dropdown menu
+2. **Open idevice_pair** and select your device from the dropdown menu
 3. **Load pairing file**: 
    - Ensure your device is unlocked and on the home screen
-   - Click `Load Pairing File`
+   - Click `Load`
    - If prompted on your device, tap `Trust` and enter your passcode
 4. **Install for your app**:
    - Keep your device unlocked and on the home screen
@@ -112,9 +110,9 @@ Before creating a pairing file, ensure you have:
 The tool includes built-in support for pairing file formats used by:
 
 - **SideStore**: `ALTPairingFile.mobiledevicepairing`
-- **LiveContainer**: `SideStore/Documents/ALTPairingFile.mobiledevicepairing`
-- **Feather**: `pairingFile.plist`
+- **LiveContainer+SideStore**: `SideStore/Documents/ALTPairingFile.mobiledevicepairing`
 - **StikDebug**: `pairingFile.plist`
+- **Feather**: `pairingFile.plist`
 - **Protokolle**: `pairingFile.plist`
 - **Antrag**: `pairingFile.plist`
 
@@ -137,15 +135,15 @@ For a complete list of dependencies, see [`Cargo.toml`](Cargo.toml).
 - Check that the device is trusted on your computer
 - Try disconnecting and reconnecting the device
 
+### Pairing File Issues
+- Make sure developer mode is enabled on your iOS device
+- Verify the pairing file format matches your target application (.plist or .mobiledevicepairing)
+- Try creating a fresh pairing file using the `load` button if it doesn't function as expected
+  
 ### Wireless Connection Issues
 - Verify both devices are on the same network
 - Ensure wireless debugging is enabled on the iOS device
 - Check firewall settings that might block port 62078
-
-### Pairing File Issues
-- Make sure developer mode is enabled on your iOS device
-- Verify the pairing file format matches your target application
-- Try generating a fresh pairing file if validation fails
 
 ## Contributing
 
