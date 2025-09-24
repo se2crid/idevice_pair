@@ -21,7 +21,7 @@ A cross-platform GUI application for managing iOS device pairing and wireless de
 ## Prerequisites
 
 - **macOS/Linux/Windows**: Cross-platform support
-- **iOS Device**: Connected via USB or on the same network
+- **iOS Device**: Must have a passcode set, Developer Mode enabled, and connected via USB
 - **Developer Mode**: Must be enabled on the iOS device for full functionality
 - **Rust**: Required for building from source
 
@@ -56,8 +56,8 @@ A cross-platform GUI application for managing iOS device pairing and wireless de
 
 The application can generate and manage pairing files for various sideloading applications:
 
-1. **Load existing pairing file**: Click "Load Pairing File" to import from your device
-2. **Generate new pairing file**: Click "Generate Pairing File" to create a fresh pairing
+1. **Load existing pairing file**: Click "Load" to import from your device
+2. **Generate new pairing file**: Click "Generate" to create a fresh pairing
 3. **Save pairing file**: Export the pairing file for use with supported applications
 4. **Validate pairing**: Test the pairing file against a network-connected device
 
