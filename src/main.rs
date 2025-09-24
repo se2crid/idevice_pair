@@ -609,7 +609,54 @@ impl eframe::App for MyApp {
                         "Failed to connect to usbmuxd! {install_msg}\n\n{idevice_error:#?}"
                     );
                 }
-                GuiCommands::Devices(vec) => self.devices = Some(vec),
+                GuiCommands::Devices(vec) => {
+                    self.devices = Some(vec);
+                    if self.selected_device.is_empty() {
+                        if let Some(devs) = &self.devices {
+                            if devs.len() == 1 {
+                                if let Some((dev_name, dev)) = devs.iter().next() {
+                                    self.selected_device = dev_name.clone();
+
+                                    self.wireless_enabled = None;
+                                    self.dev_mode_enabled = None;
+                                    self.ddi_mounted = None;
+                                    self.device_info = None;
+
+                                    let dev_clone = dev.clone();
+                                    self.idevice_sender
+                                        .send(IdeviceCommands::EnableWireless(dev_clone.clone()))
+                                        .unwrap();
+                                    self.idevice_sender
+                                        .send(IdeviceCommands::CheckDevMode(dev_clone.clone()))
+                                        .unwrap();
+                                    self.idevice_sender
+                                        .send(IdeviceCommands::AutoMount(dev_clone.clone()))
+                                        .unwrap();
+                                    self.idevice_sender
+                                        .send(IdeviceCommands::GetDeviceInfo(dev_clone))
+                                        .unwrap();
+
+                                    self.pairing_file = None;
+                                    self.pairing_file_message = None;
+                                    self.pairing_file_string = None;
+                                    self.installed_apps = None;
+                                    self.device_info = None;
+                                    self.idevice_sender
+                                        .send(IdeviceCommands::InstalledApps((
+                                            dev.clone(),
+                                            self.supported_apps
+                                                .keys()
+                                                .map(|x| x.to_owned())
+                                                .collect(),
+                                        )))
+                                        .unwrap();
+                                    self.validating = false;
+                                    self.validate_res = None;
+                                }
+                            }
+                        }
+                    }
+                }
                 GuiCommands::DeviceInfo(info) => self.device_info = Some(info),
                 GuiCommands::GetDevicesFailure(idevice_error) => {
                     self.devices_placeholder = format!(
