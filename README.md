@@ -1,4 +1,4 @@
-# iDevice Pair
+# idevice_pair
 
 A cross-platform GUI application for managing iOS device pairing and wireless debugging. This tool provides an easy-to-use interface for enabling wireless debugging, managing pairing files, and working with various iOS sideloading applications.
 
@@ -10,9 +10,9 @@ A cross-platform GUI application for managing iOS device pairing and wireless de
 - **Pairing Files**: Generate, load, and validate device pairing files
 - **App Integration**: Support for popular sideloading apps including:
   - SideStore
-  - LiveContainer
-  - Feather
+  - LiveContainer+SideStore
   - StikDebug
+  - Feather
   - Protokolle
   - Antrag
 - **Network Discovery**: Discover devices on the local network
@@ -63,8 +63,6 @@ The application can generate and manage pairing files for various sideloading ap
 
 ## Pairing Guide
 
-idevice_pair allows you to create a pairing file for programs like StikDebug to communicate with your device remotely. This pairing file is device-specific and required for tools like StikDebug to function correctly.
-
 ### Prerequisites for Pairing
 
 Before creating a pairing file, ensure you have:
@@ -76,19 +74,19 @@ Before creating a pairing file, ensure you have:
 ### Installation Instructions
 
 #### macOS
-1. Download [idevice pair for macOS](https://github.com/jkcoxson/idevice_pair/releases/latest/download/idevice_pair--macos-universal.dmg)
-2. Open the Disk Image and drag `idevice pair` to `Applications`
+1. Download [idevice_pair for macOS](https://github.com/jkcoxson/idevice_pair/releases/latest/download/idevice_pair--macos-universal.dmg)
+2. Open the Disk Image and drag `idevice_pair` to `Applications`
 
-#### Windows
-1. Install iTunes ([64-bit](https://apple.com/itunes/download/win64) or [32-bit](https://apple.com/itunes/download/win32)) from Apple's website
-2. Download [idevice pair for Windows](https://github.com/jkcoxson/idevice_pair/releases/latest/download/idevice_pair--windows-x86_64.exe) and save it to a memorable location
+#### Windows (64-bit)
+1. Install [iTunes](https://apple.com/itunes/download/win64) from Apple's website
+2. Download [idevice_pair for Windows](https://github.com/jkcoxson/idevice_pair/releases/latest/download/idevice_pair--windows-x86_64.exe) and save it to a memorable location
 
 #### Linux
 1. Install usbmuxd: 
    ```bash
    sudo apt install -y usbmuxd
    ```
-2. Download idevice_pair for your architecture:
+2. Download idevice_pair for your architecture and save it to a memorable location:
    - [x86_64](https://github.com/jkcoxson/idevice_pair/releases/latest/download/idevice_pair--linux-x86_64.AppImage)
    - [AArch64](https://github.com/jkcoxson/idevice_pair/releases/latest/download/idevice_pair--linux-aarch64.AppImage)
 3. Make the downloaded file executable
@@ -97,10 +95,10 @@ Before creating a pairing file, ensure you have:
 
 1. **Connect your device** to your computer via USB cable
    - If prompted, select `Trust` and enter your passcode
-2. **Open idevice pair** and select your device from the dropdown menu
+2. **Open idevice_pair** and select your device from the dropdown menu
 3. **Load pairing file**: 
    - Ensure your device is unlocked and on the home screen
-   - Click `Load Pairing File`
+   - Click `Load`
    - If prompted on your device, tap `Trust` and enter your passcode
 4. **Install for your app**:
    - Keep your device unlocked and on the home screen
@@ -112,7 +110,7 @@ Before creating a pairing file, ensure you have:
 The tool includes built-in support for pairing file formats used by:
 
 - **SideStore**: `ALTPairingFile.mobiledevicepairing`
-- **LiveContainer**: `SideStore/Documents/ALTPairingFile.mobiledevicepairing`
+- **LiveContainer+SideStore**: `SideStore/Documents/ALTPairingFile.mobiledevicepairing`
 - **Feather**: `pairingFile.plist`
 - **StikDebug**: `pairingFile.plist`
 - **Protokolle**: `pairingFile.plist`
