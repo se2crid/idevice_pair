@@ -67,7 +67,6 @@ fn main() {
         gui_recv,
         idevice_sender: idevice_sender.clone(),
         show_logs: false,
-        // Read package version at compile-time from Cargo.toml
         version: env!("CARGO_PKG_VERSION").to_string(),
     };
 
@@ -593,7 +592,7 @@ struct MyApp {
 
     show_logs: bool,
 
-    // App version from Cargo.toml (compile-time)
+    // App Version
     version: String,
 }
 
@@ -741,7 +740,6 @@ impl eframe::App for MyApp {
                         ui.toggle_value(&mut self.show_logs, "logs");
                     });
 
-                    // Unobtrusive version label in the top bar, right-aligned
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.label(RichText::new(format!("v{}", &self.version)).small().weak());
                     });
