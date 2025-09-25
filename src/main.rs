@@ -7,7 +7,7 @@ use std::{
     str::FromStr,
 };
 
-use egui::{Color32, ComboBox, RichText};
+use egui::{Color32, ComboBox, RichText, Layout, Align};
 use log::error;
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -67,6 +67,8 @@ fn main() {
         gui_recv,
         idevice_sender: idevice_sender.clone(),
         show_logs: false,
+        // Read package version at compile-time from Cargo.toml
+        version: env!("CARGO_PKG_VERSION").to_string(),
     };
 
     let mut options = eframe::NativeOptions::default();
@@ -590,6 +592,9 @@ struct MyApp {
     idevice_sender: UnboundedSender<IdeviceCommands>,
 
     show_logs: bool,
+
+    // App version from Cargo.toml (compile-time)
+    version: String,
 }
 
 impl eframe::App for MyApp {
@@ -734,6 +739,11 @@ impl eframe::App for MyApp {
                     };
                     egui::frame::Frame::new().corner_radius(3).inner_margin(3).fill(p_background_color).show(ui, |ui| {
                         ui.toggle_value(&mut self.show_logs, "logs");
+                    });
+
+                    // Unobtrusive version label in the top bar, right-aligned
+                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                        ui.label(RichText::new(format!("v{}", &self.version)).small().weak());
                     });
                 });
                 match &self.devices {
@@ -954,7 +964,7 @@ impl eframe::App for MyApp {
                                             ui.label(RichText::new(bundle_id).italics().weak());
                                             ui.label(format!("{name} is installed on your device. You can automatically install the pairing file into the app."));
                                             if ui.button("Install").clicked() {
-                                                self.idevice_sender.send(IdeviceCommands::InstallPairingFile((dev.clone(), name.clone(), bundle_id.clone(), self.supported_apps.get(name).unwrap().to_owned(), self.pairing_file.clone().unwrap()))).unwrap();
+                                                self.idevice_sender.send(IdeviceCommands::InstallPairingFile((dev.clone(), name.clone(), bundle_id.clone(), self.supported_apps.get(name).unwrap().to_ow[...]
                                                 self.install_res.insert(name.to_owned(), None);
                                             }
                                             if let Some(v) = self.install_res.get(name) {
