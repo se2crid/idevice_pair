@@ -524,7 +524,7 @@ fn main() {
         eprintln!("Exited idevice loop!!");
     });
 
-    eframe::run_native("idevice pair", options, Box::new(|_| Ok(Box::new(app)))).unwrap();
+    eframe::run_native(&format!("idevice pair v{}", env!("CARGO_PKG_VERSION")), options, Box::new(|_| Ok(Box::new(app)))).unwrap();
 }
 
 enum GuiCommands {
