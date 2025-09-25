@@ -964,7 +964,7 @@ impl eframe::App for MyApp {
                                             ui.label(RichText::new(bundle_id).italics().weak());
                                             ui.label(format!("{name} is installed on your device. You can automatically install the pairing file into the app."));
                                             if ui.button("Install").clicked() {
-                                                self.idevice_sender.send(IdeviceCommands::InstallPairingFile((dev.clone(), name.clone(), bundle_id.clone(), self.supported_apps.get(name).unwrap().to_ow[...]
+                                                self.idevice_sender.send(IdeviceCommands::InstallPairingFile((dev.clone(), name.clone(), bundle_id.clone(), self.supported_apps.get(name).unwrap().to_owned(), self.pairing_file.clone().unwrap()))).unwrap();
                                                 self.install_res.insert(name.to_owned(), None);
                                             }
                                             if let Some(v) = self.install_res.get(name) {
