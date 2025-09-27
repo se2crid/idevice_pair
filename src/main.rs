@@ -5,6 +5,7 @@ use std::{
     collections::HashMap,
     net::{IpAddr, SocketAddr},
     str::FromStr,
+    time::{Duration, Instant},
 };
 
 use egui::{Color32, ComboBox, RichText};
@@ -67,6 +68,11 @@ fn main() {
         gui_recv,
         idevice_sender: idevice_sender.clone(),
         show_logs: false,
+        lazy_in_progress: false,
+        lazy_status: None,
+        lazy_sent_load: false,
+        lazy_sent_installs: false,
+        last_lazy_refresh: None,
     };
 
     let mut options = eframe::NativeOptions::default();
@@ -590,6 +596,12 @@ struct MyApp {
     idevice_sender: UnboundedSender<IdeviceCommands>,
 
     show_logs: bool,
+
+    lazy_in_progress: bool,
+    lazy_status: Option<String>,
+    lazy_sent_load: bool,
+    lazy_sent_installs: bool,
+    last_lazy_refresh: Option<Instant>,
 }
 
 impl eframe::App for MyApp {
@@ -735,7 +747,127 @@ impl eframe::App for MyApp {
                     egui::frame::Frame::new().corner_radius(3).inner_margin(3).fill(p_background_color).show(ui, |ui| {
                         ui.toggle_value(&mut self.show_logs, "logs");
                     });
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("I am lazy").clicked() {
+                            self.lazy_in_progress = true;
+                            self.lazy_status = Some("Refreshing device list...".to_string());
+                            self.lazy_sent_load = false;
+                            self.lazy_sent_installs = false;
+                            self.install_res.clear();
+                            let _ = self.idevice_sender.send(IdeviceCommands::GetDevices);
+                            self.last_lazy_refresh = Some(Instant::now());
+                        }
+                        if let Some(status) = &self.lazy_status {
+                            ui.label(status);
+                        }
+                    });
                 });
+
+                if self.lazy_in_progress {
+                    match &self.devices {
+                        None => {
+                            self.lazy_status = Some("Loading devices...".to_string());
+                        }
+                        Some(devs) => {
+                            if devs.is_empty() {
+                                self.lazy_status = Some("Waiting for a device to be plugged in...".to_string());
+                                // Periodically refresh while waiting
+                                let should_refresh = match self.last_lazy_refresh {
+                                    None => true,
+                                    Some(t) => t.elapsed() > Duration::from_secs(2),
+                                };
+                                if should_refresh {
+                                    let _ = self.idevice_sender.send(IdeviceCommands::GetDevices);
+                                    self.last_lazy_refresh = Some(Instant::now());
+                                }
+                                ctx.request_repaint_after(Duration::from_millis(500));
+                            } else {
+                                if self.selected_device.is_empty() {
+                                    if devs.len() == 1 {
+                                        if let Some((name, _)) = devs.iter().next() {
+                                            self.selected_device = name.clone();
+                                        }
+                                    } else {
+                                        self.lazy_status = Some("Multiple devices connected. Please select one.".to_string());
+                                        ctx.request_repaint_after(Duration::from_millis(500));
+                                        return; // pause the flow until user selects
+                                    }
+                                }
+
+                                if !self.lazy_sent_load {
+                                    if let Some(dev) = devs.get(&self.selected_device) {
+                                        self.pairing_file_message = Some("Loading...".to_string());
+                                        self.pairing_file_string = None;
+                                        let _ = self.idevice_sender.send(IdeviceCommands::LoadPairingFile(dev.clone()));
+                                        self.lazy_sent_load = true;
+                                        self.lazy_status = Some("Loading pairing file...".to_string());
+                                    }
+                                } else if self.pairing_file.is_none() {
+                                    self.lazy_status = Some("Waiting for pairing file...".to_string());
+                                    ctx.request_repaint_after(Duration::from_millis(200));
+                                } else {
+                                    if self.installed_apps.is_none() {
+                                        if let Some(dev) = devs.get(&self.selected_device) {
+                                            let desired: Vec<String> = self.supported_apps.keys().cloned().collect();
+                                            let _ = self.idevice_sender.send(IdeviceCommands::InstalledApps((dev.clone(), desired)));
+                                        }
+                                        self.lazy_status = Some("Getting installed apps...".to_string());
+                                        ctx.request_repaint_after(Duration::from_millis(200));
+                                    } else if let Some(Err(_e)) = &self.installed_apps {
+                                        self.lazy_in_progress = false;
+                                        self.lazy_status = Some("Failed to get installed apps".to_string());
+                                    } else if let Some(Ok(apps)) = &self.installed_apps {
+                                        if !self.lazy_sent_installs {
+                                            let mut install_count = 0usize;
+                                            if let Some(dev) = devs.get(&self.selected_device) {
+                                                let pf = self.pairing_file.clone().unwrap();
+                                                for (name, bundle_id) in apps.iter() {
+                                                    if let Some(path) = self.supported_apps.get(name) {
+                                                        let _ = self.idevice_sender.send(IdeviceCommands::InstallPairingFile((
+                                                            dev.clone(),
+                                                            name.clone(),
+                                                            bundle_id.clone(),
+                                                            path.clone(),
+                                                            pf.clone(),
+                                                        )));
+                                                        self.install_res.insert(name.clone(), None);
+                                                        install_count += 1;
+                                                    }
+                                                }
+                                            }
+                                            self.lazy_sent_installs = true;
+                                            if install_count == 0 {
+                                                self.lazy_in_progress = false;
+                                                self.lazy_status = Some("No compatible apps installed".to_string());
+                                            } else {
+                                                self.lazy_status = Some(format!("Installing into {} apps...", install_count));
+                                            }
+                                            ctx.request_repaint_after(Duration::from_millis(200));
+                                        } else {
+                                            // Wait for all targeted installs to complete
+                                            let mut all_done = true;
+                                            for (name, _bundle_id) in apps.iter() {
+                                                if self.supported_apps.contains_key(name) {
+                                                    match self.install_res.get(name) {
+                                                        Some(Some(_)) => {}
+                                                        _ => all_done = false,
+                                                    }
+                                                }
+                                            }
+                                            if all_done {
+                                                self.lazy_in_progress = false;
+                                                self.lazy_status = Some("Done".to_string());
+                                            } else {
+                                                self.lazy_status = Some("Installing...".to_string());
+                                                ctx.request_repaint_after(Duration::from_millis(200));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 match &self.devices {
                     Some(devs) => {
                         if devs.is_empty() {
