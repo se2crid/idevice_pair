@@ -611,7 +611,8 @@ impl eframe::App for MyApp {
                 }
                 GuiCommands::Devices(vec) => {
                     self.devices = Some(vec);
-                    if self.selected_device.is_empty() {
+                    if self.selected_device.is_empty() || 
+                       (self.devices.as_ref().map_or(true, |devs| !devs.contains_key(&self.selected_device))) {
                         if let Some(devs) = &self.devices {
                             if devs.len() == 1 {
                                 if let Some((dev_name, dev)) = devs.iter().next() {
