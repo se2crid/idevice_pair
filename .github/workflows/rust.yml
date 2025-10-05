@@ -74,7 +74,7 @@ jobs:
 
       # Build and package
       - name: Build binary
-        run: cargo build --release --bin ${{ env.BINARY_NAME }} --target ${{ matrix.target }}
+        run: cargo build --release --no-default-features --bin ${{ env.BINARY_NAME }} --target ${{ matrix.target }}
 
       - name: Download appimagetool
         run: |
@@ -147,6 +147,7 @@ jobs:
       - name: Build ${{ matrix.arch }} slice
         run: |
           cargo build --release \
+            --no-default-features \
             --bin ${{ env.BINARY_NAME }} \
             --target ${{ matrix.target }}
 
@@ -300,7 +301,7 @@ jobs:
       - name: Build and Rename Executable
         shell: bash
         run: |
-          cargo build --release --bin ${{ env.BINARY_NAME }} --target x86_64-pc-windows-msvc
+          cargo build --release --no-default-features --bin ${{ env.BINARY_NAME }} --target x86_64-pc-windows-msvc
           mkdir -p release
           cp target/x86_64-pc-windows-msvc/release/${{ env.BINARY_NAME }}.exe \
              release/${{ env.APP_NAME }}-${{ env.VERSION }}-windows-x86_64.exe
