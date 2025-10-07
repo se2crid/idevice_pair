@@ -70,6 +70,13 @@ fn main() {
     };
 
     let mut options = eframe::NativeOptions::default();
+    // Smoother drag/resize on Windows/Linux
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
+    {
+        options.vsync = false;
+        options.run_and_return = false;
+        options.wgpu_options.present_mode = wgpu::PresentMode::AutoNoVsync;
+    }
 
     // Prefer GL only on macOS Intel
     #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
