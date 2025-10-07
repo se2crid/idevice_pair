@@ -524,7 +524,30 @@ fn main() {
         eprintln!("Exited idevice loop!!");
     });
 
-    eframe::run_native(&format!("idevice pair v{}", env!("CARGO_PKG_VERSION")), options, Box::new(|_| Ok(Box::new(app)))).unwrap();
+    eframe::run_native(
+        &format!("idevice pair v{}", env!("CARGO_PKG_VERSION")),
+        options,
+        Box::new(|cc| {
+            // Setup proper font rendering
+            // Ensure zoom factor is set correctly
+            cc.egui_ctx.set_zoom_factor(1.0);
+            
+            // Configure text styles with proper font sizes
+            let mut style = (*cc.egui_ctx.style()).clone();
+            style.text_styles = [
+                (egui::TextStyle::Small, egui::FontId::new(10.0, egui::FontFamily::Proportional)),
+                (egui::TextStyle::Body, egui::FontId::new(14.0, egui::FontFamily::Proportional)),
+                (egui::TextStyle::Button, egui::FontId::new(14.0, egui::FontFamily::Proportional)),
+                (egui::TextStyle::Heading, egui::FontId::new(20.0, egui::FontFamily::Proportional)),
+                (egui::TextStyle::Monospace, egui::FontId::new(14.0, egui::FontFamily::Monospace)),
+            ]
+            .into();
+            cc.egui_ctx.set_style(style);
+            
+            Ok(Box::new(app))
+        }),
+    )
+    .unwrap();
 }
 
 enum GuiCommands {
