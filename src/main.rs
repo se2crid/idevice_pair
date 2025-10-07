@@ -901,34 +901,37 @@ impl eframe::App for MyApp {
                     if let Some(pairing_file) = &self.pairing_file_string {
                         egui::Grid::new("reee").min_col_width(200.0).show(ui, |ui| {
                             ui.vertical(|ui| {
-                                ui.heading("Save to File");
-                                if let Some(msg) = &self.save_error {
-                                    ui.label(RichText::new(msg).color(Color32::RED));
-                                }
-                                ui.label("Save this file to your computer, and then transfer it to your device manually.");
-                                if ui.button("Save to File").clicked()
-                                    && let Some(p) = FileDialog::new()
-                                        .set_can_create_directories(true)
-                                        .set_title("Save Pairing File")
-                                        .set_file_name(format!("{}.plist", &dev.udid))
-                                        .save_file()
-                                    {
-                                        self.save_error = None;
-                                        if let Err(e) = std::fs::write(
-                                            p,
-                                            self.pairing_file
-                                                .as_ref()
-                                                .unwrap()
-                                                .clone()
-                                                .serialize()
-                                                .unwrap(),
-                                        ) {
-                                            self.save_error = Some(e.to_string());
-                                        }
-                                    
-                                }
+                                #[cfg(feature = "generate")]
+                                {
+                                    ui.heading("Save to File");
+                                    if let Some(msg) = &self.save_error {
+                                        ui.label(RichText::new(msg).color(Color32::RED));
+                                    }
+                                    ui.label("Save this file to your computer, and then transfer it to your device manually.");
+                                    if ui.button("Save to File").clicked()
+                                        && let Some(p) = FileDialog::new()
+                                            .set_can_create_directories(true)
+                                            .set_title("Save Pairing File")
+                                            .set_file_name(format!("{}.plist", &dev.udid))
+                                            .save_file()
+                                        {
+                                            self.save_error = None;
+                                            if let Err(e) = std::fs::write(
+                                                p,
+                                                self.pairing_file
+                                                    .as_ref()
+                                                    .unwrap()
+                                                    .clone()
+                                                    .serialize()
+                                                    .unwrap(),
+                                            ) {
+                                                self.save_error = Some(e.to_string());
+                                            }
+                                        
+                                    }
 
-                                ui.separator();
+                                    ui.separator();
+                                }
                                 ui.heading("Validation");
                                 ui.label("Verify that your pairing file works over LAN. Your device will be searched for over your network.");
                                 ui.add(egui::TextEdit::singleline(&mut self.validation_ip_input).hint_text("OR enter your device's IP..."));
