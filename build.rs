@@ -17,6 +17,13 @@ const OUTPUT_FILES: [&str; 3] = [
 ];
 
 fn main() {
+    #[cfg(windows)]
+    {
+        let mut res = winres::WindowsResource::new();
+        res.set_icon("icon.ico");
+        res.compile().unwrap();
+    }
+
     println!("cargo:rerun-if-changed=build.rs");
 
     // Ensure output directory exists
