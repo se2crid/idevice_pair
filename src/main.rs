@@ -84,15 +84,19 @@ fn main() {
         options.renderer = eframe::Renderer::Glow;
     }
 
+    // Use default icon on macOS; use bundled PNG elsewhere
     #[cfg(target_os = "macos")]
-    let icon_bytes: &[u8] = include_bytes!("../icon.png");
+    {
+        options.viewport.icon = Some(std::sync::Arc::new(egui::IconData::default()));
+    }
 
     #[cfg(not(target_os = "macos"))]
-    let icon_bytes: &[u8] = include_bytes!("../icon.png");
-
-    let d = eframe::icon_data::from_png_bytes(icon_bytes)
-        .expect("The icon data must be valid");
-    options.viewport.icon = Some(std::sync::Arc::new(d));
+    {
+        let icon_bytes: &[u8] = include_bytes!("../icon.png");
+        let d = eframe::icon_data::from_png_bytes(icon_bytes)
+            .expect("The icon data must be valid");
+        options.viewport.icon = Some(std::sync::Arc::new(d));
+    }
 
     // rt must be kept in scope for channel lifetimes, so we define and then spawn.
     let rt = tokio::runtime::Builder::new_multi_thread()
