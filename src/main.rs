@@ -5,9 +5,11 @@ use std::{
     collections::HashMap,
     net::{IpAddr, SocketAddr},
     str::FromStr,
+    thread,
 };
 
 use egui::{Color32, ComboBox, RichText};
+use futures_util::StreamExt;
 use log::error;
 use tokio::sync::mpsc::unbounded_channel;
 
@@ -17,7 +19,7 @@ use idevice::{
     installation_proxy::InstallationProxyClient,
     lockdown::LockdownClient,
     pairing_file::PairingFile,
-    usbmuxd::{Connection, UsbmuxdAddr, UsbmuxdConnection, UsbmuxdDevice},
+    usbmuxd::{Connection, UsbmuxdAddr, UsbmuxdConnection, UsbmuxdDevice, UsbmuxdListenEvent},
 };
 use rfd::FileDialog;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -100,8 +102,50 @@ fn main() {
         .build()
         .unwrap();
 
+    // mDNS discovery for LAN validation
+    let discover_sender = idevice_sender.clone();
     rt.spawn(async move {
-        discover::start_discover(idevice_sender).await;
+        discover::start_discover(discover_sender).await;
+    });
+
+    // usbmuxd hot-plug listener to auto-refresh device list (non-Send stream -> run on single-thread runtime)
+    let idevice_sender_listen = idevice_sender.clone();
+    thread::spawn(move || {
+        let rt_local = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt_local.block_on(async move {
+            loop {
+                match UsbmuxdConnection::default().await {
+                    Ok(mut uc) => match uc.listen().await {
+                        Ok(mut stream) => {
+                            while let Some(evt) = stream.next().await {
+                                match evt {
+                                    Ok(UsbmuxdListenEvent::Connected(_))
+                                    | Ok(UsbmuxdListenEvent::Disconnected(_)) => {
+                                        let _ = idevice_sender_listen
+                                            .send(IdeviceCommands::GetDevices);
+                                    }
+                                    Err(e) => {
+                                        log::warn!("usbmuxd listen error: {e:?}");
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to start usbmuxd listen: {e:?}");
+                        }
+                    },
+                    Err(e) => {
+                        log::warn!("Failed to connect to usbmuxd for listening: {e:?}");
+                    }
+                }
+                // quick reconnect backoff on error
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            }
+        });
     });
 
     rt.spawn(async move {
@@ -811,12 +855,6 @@ impl eframe::App for MyApp {
                                 }
                             });
                         }
-                        if ui.button("Refresh...").clicked() {
-                            self.idevice_sender
-                                .send(IdeviceCommands::GetDevices)
-                                .unwrap();
-                        }
-
                     }
                     None => {
                         ui.label(&self.devices_placeholder);

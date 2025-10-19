@@ -2086,9 +2086,8 @@ dependencies = [
 
 [[package]]
 name = "idevice"
-version = "0.1.43"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c91de67ef6bd276914a2d1ca6fe88750e55765caed9c2dff4dfff57d825eb3c"
+version = "0.1.45"
+source = "git+https://github.com/jkcoxson/idevice?rev=c10f4da9f1ee510f5c090e75457cd24ecb17c668#c10f4da9f1ee510f5c090e75457cd24ecb17c668"
 dependencies = [
  "async_zip",
  "base64",
@@ -3197,9 +3196,9 @@ checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 
 [[package]]
 name = "plist"
-version = "1.7.4"
+version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3af6b589e163c5a788fab00ce0c0366f6efbb9959c2f9874b224936af7fce7e1"
+checksum = "740ebea15c5d1428f910cd1a5f52cebf8d25006245ed8ade92702f4943d91e07"
 dependencies = [
  "base64",
  "indexmap",

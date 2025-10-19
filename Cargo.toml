@@ -4,7 +4,7 @@ version = "0.1.8"
 edition = "2024"
 
 [dependencies]
-idevice = { version = "0.1.43", features = [
+idevice = { git = "https://github.com/jkcoxson/idevice", rev = "c10f4da9f1ee510f5c090e75457cd24ecb17c668", features = [
   "pair",
   "usbmuxd",
   "installation_proxy",
@@ -25,7 +25,7 @@ eframe = { version = "0.32", default-features = false, features = [
 wgpu = { version = "25", features = ["dx12", "vulkan", "metal", "gles"] }
 rfd = { version = "0.15", features = ["gtk3"], default-features = false }
 tokio = { version = "1.45", features = ["full"] }
-plist = { version = "1.7" }
+plist = { version = "1.8" }
 log = { version = "0.4" }
 uuid = { version = "1.16", features = ["v4"] }
 mdns = { version = "3" }
