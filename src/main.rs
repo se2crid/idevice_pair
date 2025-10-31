@@ -929,12 +929,6 @@ impl eframe::App for MyApp {
                                     .unwrap();
                             }
                         });
-                        #[cfg(not(feature = "generate"))]
-                        ui.vertical(|ui| {
-                            ui.heading("Generation Disabled");
-                            ui.label("This program was built without generation support. Use load instead.");
-                            ui.label("For SideStore or StikDebug, load is what you want.");
-                        });
                     });
                     if let Some(msg) = &self.pairing_file_message {
                         ui.label(msg);
