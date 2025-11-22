@@ -162,8 +162,7 @@ jobs:
     needs: macos-universal
     runs-on: macos-latest
     env:
-      HAVE_SIGNING_SECRETS: ${{ secrets.DEV_ID_P12_BASE64 != '' && secrets.DEV_ID_P12_PASSWORD != '' && secrets.DEV_IDENTITY_NAME != '' }}
-      HAVE_NOTARIZE_SECRETS: ${{ secrets.NOTARIZE_APPLE_ID != '' && secrets.NOTARIZE_APP_SPECIFIC_PASS != '' && secrets.NOTARIZE_TEAM_ID != '' }}
+      HAVE_SIGNING_AND_NOTARIZATION: ${{ secrets.p12_file_base64 != '' && secrets.p12_password != '' && secrets.app_store_connect_api_key != '' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -179,13 +178,6 @@ jobs:
         with:
           name: slice-arm64
           path: slice-arm64
-
-      - name: Import Developer ID Certificate
-        if: env.HAVE_SIGNING_SECRETS == 'true'
-        uses: apple-actions/import-codesign-certs@v5
-        with:
-          p12-file-base64: ${{ secrets.DEV_ID_P12_BASE64 }}
-          p12-password: ${{ secrets.DEV_ID_P12_PASSWORD }}
 
       - name: Build & Assemble Universal .app
         run: |
@@ -222,19 +214,36 @@ jobs:
           # 4) Clean any stray xattrs
           xattr -rc "$APP"
 
-      - name: Code-sign with Hardened Runtime & Timestamp
-        if: env.HAVE_SIGNING_SECRETS == 'true'
-        run: |
-          APP="${{ env.APP_NAME }}.app"
-          codesign --force --deep --options runtime --timestamp \
-            --sign "${{ secrets.DEV_IDENTITY_NAME }}" "$APP"
-
       - name: Fix Permissions
         run: |
           APP="${{ env.APP_NAME }}.app"
           find "$APP" -type d -exec chmod 755 {} +
           find "$APP" -type f -exec chmod 644 {} +
           chmod +x "$APP/Contents/MacOS/${{ env.APP_NAME }}"
+
+      - name: Prepare signing assets
+        if: env.HAVE_SIGNING_AND_NOTARIZATION == 'true'
+        run: |
+          echo "${{ secrets.p12_file_base64 }}" | base64 --decode > certificate.p12
+          umask 077
+          printf '%s' "${{ secrets.app_store_connect_api_key }}" > asc_api_key.json
+
+      - name: Sign, Notarize & Staple app
+        if: env.HAVE_SIGNING_AND_NOTARIZATION == 'true'
+        uses: indygreg/apple-code-sign-action@v1
+        with:
+          input_path: ${{ env.APP_NAME }}.app
+          notarize: true
+          staple: true
+          p12_file: certificate.p12
+          p12_password: ${{ secrets.p12_password }}
+          app_store_connect_api_key_json_file: asc_api_key.json
+          sign_args: --code-signature-flags runtime
+
+      - name: Cleanup signing materials
+        if: env.HAVE_SIGNING_AND_NOTARIZATION == 'true'
+        run: |
+          rm -f certificate.p12 asc_api_key.json
 
       - name: Create DMG
         run: |
@@ -249,17 +258,6 @@ jobs:
             "$DMG"
           rm -rf dmg-staging
           echo "$DMG" > dmg-path.txt
-
-      - name: Notarize & Staple DMG
-        if: env.HAVE_NOTARIZE_SECRETS == 'true'
-        run: |
-          DMG=$(cat dmg-path.txt)
-          xcrun notarytool submit "$DMG" \
-            --apple-id "${{ secrets.NOTARIZE_APPLE_ID }}" \
-            --password "${{ secrets.NOTARIZE_APP_SPECIFIC_PASS }}" \
-            --team-id "${{ secrets.NOTARIZE_TEAM_ID }}" \
-            --wait --verbose
-          xcrun stapler staple "$DMG"
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
