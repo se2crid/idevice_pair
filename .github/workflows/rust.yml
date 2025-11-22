@@ -238,7 +238,7 @@ jobs:
           p12_file: certificate.p12
           p12_password: ${{ secrets.p12_password }}
           app_store_connect_api_key_json_file: asc_api_key.json
-          sign_args: --code-signature-flags runtime
+          sign_args: --code-signature-flags=runtime
 
       - name: Cleanup signing materials
         if: env.HAVE_SIGNING_AND_NOTARIZATION == 'true'
