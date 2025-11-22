@@ -43,6 +43,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Compute Cargo.lock hash
+        run: |
+          python - <<'PY' >> "$GITHUB_ENV"
+          import hashlib, pathlib
+          h = hashlib.sha256(pathlib.Path("Cargo.lock").read_bytes()).hexdigest()
+          print(f"CARGO_LOCK_HASH={h}")
+          PY
+
       # Build setup
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -69,8 +77,10 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{matrix.target}}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: linux-cargo-
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ env.CARGO_LOCK_HASH }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-
+            ${{ runner.os }}-cargo-
 
       # Build and package
       - name: Build binary
@@ -128,6 +138,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Compute Cargo.lock hash
+        run: |
+          python - <<'PY' >> "$GITHUB_ENV"
+          import hashlib, pathlib
+          h = hashlib.sha256(pathlib.Path("Cargo.lock").read_bytes()).hexdigest()
+          print(f"CARGO_LOCK_HASH={h}")
+          PY
+
       - name: Set up Rust for ${{ matrix.arch }}
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -141,8 +159,10 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{matrix.target}}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: linux-cargo-
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ env.CARGO_LOCK_HASH }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-
+            ${{ runner.os }}-cargo-
 
       - name: Build ${{ matrix.arch }} slice
         run: |
@@ -271,6 +291,15 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v3
+
+      - name: Compute Cargo.lock hash
+        shell: bash
+        run: |
+          python - <<'PY' >> "$GITHUB_ENV"
+          import hashlib, pathlib
+          h = hashlib.sha256(pathlib.Path("Cargo.lock").read_bytes()).hexdigest()
+          print(f"CARGO_LOCK_HASH={h}")
+          PY
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -283,8 +312,9 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: windows-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: linux-cargo-
+          key: ${{ runner.os }}-cargo-${{ env.CARGO_LOCK_HASH }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
       - name: Build and Rename Executable
         shell: bash
         run: |
