@@ -205,7 +205,7 @@ jobs:
           <plist version="1.0"><dict>
             <key>CFBundleName</key><string>${{ env.APP_NAME }}</string>
             <key>CFBundleDisplayName</key><string>${{ env.APP_NAME }}</string>
-            <key>CFBundleIdentifier</key><string>com.github.se2cird2.${{ env.APP_NAME }}</string>
+            <key>CFBundleIdentifier</key><string>com.github.jkcoxson.${{ env.APP_NAME }}</string>
             <key>CFBundleVersion</key><string>${{ env.VERSION }}</string>
             <key>CFBundleShortVersionString</key><string>${{ env.VERSION }}</string>
             <key>CFBundleExecutable</key><string>${{ env.APP_NAME }}</string>
